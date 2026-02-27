@@ -1,0 +1,47 @@
+[project]
+name = "kelet"
+version = "0.2.0"
+description = "Kelet SDK - OpenTelemetry integration for AI observability"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.25.0",
+    "pydantic>=2.10.6",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.20.0",
+]
+
+[project.optional-dependencies]
+pydantic-ai = ["pydantic-ai>=0.1.0"]
+# Keep pandas as optional for backward compatibility with examples
+pandas = ["pandas>=2.2.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+log_cli = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.11.2",
+    "pyright>=1.1.401",
+    "load-dotenv>=0.1.0",
+    "openai>=1.77.0",
+    "notebook>=7.3.2",
+    "pandas>=2.2.3",
+    "pytest-xdist>=3.8.0",
+    "pytest-asyncio>=1.1.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+]
