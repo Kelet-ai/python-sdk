@@ -1,8 +1,8 @@
 """Context helpers for session and trace management."""
 
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import AsyncGenerator, Generator, Optional
+from typing import Generator, Optional
 
 from opentelemetry import trace
 
@@ -49,7 +49,7 @@ def get_user_id() -> Optional[str]:
 
 @contextmanager
 def agentic_session(
-    *, session_id: str, user_id: Optional[str] = None
+    *, session_id: str, user_id: Optional[str] = None, **kwargs: object
 ) -> Generator[None, None, None]:
     """Context manager to define an agentic session.
 
@@ -57,9 +57,13 @@ def agentic_session(
     the provided session_id and user_id. Session/user IDs are also added
     as attributes to the current span if one exists.
 
+    Additional keyword arguments are stamped as metadata.{key} span attributes,
+    allowing callers to pass arbitrary metadata (e.g. $kelet_internal=True).
+
     Args:
         session_id: Conversation/session identifier (gen_ai.conversation.id)
         user_id: Optional user identifier (user.id)
+        **kwargs: Additional metadata stamped as metadata.{key} span attributes
 
     Example:
         with kelet.agentic_session(session_id="session-123", user_id="user-456"):
@@ -75,6 +79,11 @@ def agentic_session(
         span.set_attribute(SESSION_ID_ATTR, session_id)
         if user_id:
             span.set_attribute(USER_ID_ATTR, user_id)
+        for key, value in kwargs.items():
+            if isinstance(value, (str, bool, int, float)):
+                span.set_attribute(f"metadata.{key}", value)
+            else:
+                span.set_attribute(f"metadata.{key}", str(value))
 
     try:
         yield
@@ -82,24 +91,3 @@ def agentic_session(
         _session_id_var.reset(session_token)
         if user_token is not None:
             _user_id_var.reset(user_token)
-
-
-@asynccontextmanager
-async def agentic_session_async(
-    *, session_id: str, user_id: Optional[str] = None
-) -> AsyncGenerator[None, None]:
-    """Async context manager to define an agentic session.
-
-    Identical to agentic_session() but for async with syntax.
-
-    Args:
-        session_id: Conversation/session identifier (gen_ai.conversation.id)
-        user_id: Optional user identifier (user.id)
-
-    Example:
-        async with kelet.agentic_session_async(session_id="session-123", user_id="user-456"):
-            result = await agent.run(...)
-            await kelet.signal(source=..., vote=...)
-    """
-    with agentic_session(session_id=session_id, user_id=user_id):
-        yield

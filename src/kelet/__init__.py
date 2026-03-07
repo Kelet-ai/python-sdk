@@ -33,7 +33,6 @@ Or use logfire as primary, kelet as secondary:
 from ._configure import configure, create_kelet_processor, shutdown
 from ._context import (
     agentic_session,
-    agentic_session_async,
     get_session_id,
     get_trace_id,
     get_user_id,
@@ -47,7 +46,6 @@ __all__ = [
     "shutdown",
     "signal",
     "agentic_session",
-    "agentic_session_async",
     "get_session_id",
     "get_trace_id",
     "get_user_id",

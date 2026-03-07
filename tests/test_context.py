@@ -1,5 +1,7 @@
 """Tests for context helpers (ContextVar-based session/user management)."""
 
+from unittest.mock import MagicMock, patch
+
 from kelet._context import (
     agentic_session,
     get_session_id,
@@ -53,3 +55,29 @@ def test_nested_agentic_sessions():
 def test_get_trace_id_none_without_span():
     """Returns None when no span is active."""
     assert get_trace_id() is None
+
+
+def test_agentic_session_kwargs_stamped():
+    """Extra kwargs are stamped as metadata.{key} on the current span."""
+    mock_span = MagicMock()
+    mock_span.is_recording.return_value = True
+
+    with patch("kelet._context.trace") as mock_trace:
+        mock_trace.get_current_span.return_value = mock_span
+        with agentic_session(session_id="s", foo="bar"):
+            pass
+
+    mock_span.set_attribute.assert_any_call("metadata.foo", "bar")
+
+
+def test_agentic_session_dollar_key():
+    """Dollar-prefixed kwargs are stamped correctly as metadata.$key."""
+    mock_span = MagicMock()
+    mock_span.is_recording.return_value = True
+
+    with patch("kelet._context.trace") as mock_trace:
+        mock_trace.get_current_span.return_value = mock_span
+        with agentic_session(session_id="s", **{"$reserved": True}):  # type: ignore[arg-type]
+            pass
+
+    mock_span.set_attribute.assert_any_call("metadata.$reserved", True)

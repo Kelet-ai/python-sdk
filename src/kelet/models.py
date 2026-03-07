@@ -9,7 +9,6 @@ from pydantic import BaseModel, field_validator
 from .json_encoder import AdvancedJsonEncoder
 
 
-
 class InsensitiveEnum(str, Enum):
     """Case-insensitive string enum base class."""
 

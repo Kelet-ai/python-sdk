@@ -42,7 +42,6 @@ class TestAdvancedJsonEncoder:
 
     def test_basic_json_types(self):
         """Test encoding of basic JSON types."""
-        encoder = AdvancedJsonEncoder()
         data = {
             "string": "test",
             "number": 42,
@@ -58,7 +57,6 @@ class TestAdvancedJsonEncoder:
 
     def test_enum_serialization(self):
         """Test enum serialization."""
-        encoder = AdvancedJsonEncoder()
         data = {"enum_value": SampleEnum.VALUE_A}
         result = json.dumps(data, cls=AdvancedJsonEncoder)
         parsed = json.loads(result)
@@ -66,7 +64,6 @@ class TestAdvancedJsonEncoder:
 
     def test_dataclass_serialization(self):
         """Test dataclass serialization."""
-        encoder = AdvancedJsonEncoder()
         obj = SampleDataclass(name="test", value=123)
         data = {"dataclass": obj}
         result = json.dumps(data, cls=AdvancedJsonEncoder)
@@ -75,7 +72,6 @@ class TestAdvancedJsonEncoder:
 
     def test_callable_serialization_with_name(self):
         """Test callable serialization with function name."""
-        encoder = AdvancedJsonEncoder()
         data = {"function": test_function}
 
         with patch("kelet.json_encoder.warning") as mock_warning:
@@ -89,7 +85,6 @@ class TestAdvancedJsonEncoder:
 
     def test_callable_serialization_fallback(self):
         """Test callable serialization fallback to repr."""
-        encoder = AdvancedJsonEncoder()
 
         # Create a callable that will trigger exception handling
         class BadCallable:
@@ -111,7 +106,6 @@ class TestAdvancedJsonEncoder:
 
     def test_none_type_serialization(self):
         """Test None type serialization."""
-        encoder = AdvancedJsonEncoder()
         data = {"none_value": type(None)()}
         result = json.dumps(data, cls=AdvancedJsonEncoder)
         parsed = json.loads(result)
@@ -119,7 +113,6 @@ class TestAdvancedJsonEncoder:
 
     def test_repr_fallback(self):
         """Test fallback to __repr__ for unknown objects."""
-        encoder = AdvancedJsonEncoder()
         obj = SampleObject()
         data = {"object": obj}
         result = json.dumps(data, cls=AdvancedJsonEncoder)
@@ -142,8 +135,6 @@ class TestAdvancedJsonEncoder:
 
     def test_pydantic_serialization_when_unavailable(self):
         """Test behavior when Pydantic is not available."""
-        encoder = AdvancedJsonEncoder()
-
         # Create a mock object that looks like a BaseModel but isn't
         mock_model = MagicMock()
         mock_model.__class__.__name__ = "BaseModel"
@@ -175,8 +166,6 @@ class TestAdvancedJsonEncoder:
 
     def test_pandas_serialization_when_unavailable(self):
         """Test behavior when pandas is not available."""
-        encoder = AdvancedJsonEncoder()
-
         # Create a mock object that looks like pandas but isn't
         mock_series = MagicMock()
         mock_df = MagicMock()
@@ -193,8 +182,6 @@ class TestAdvancedJsonEncoder:
 
     def test_complex_nested_structure(self):
         """Test encoding of complex nested structures."""
-        encoder = AdvancedJsonEncoder()
-
         nested_data = {
             "enum": SampleEnum.VALUE_B,
             "dataclass": SampleDataclass(name="nested", value=456),
@@ -218,7 +205,6 @@ class TestAdvancedJsonEncoder:
 
     def test_unsupported_object_fallback(self):
         """Test fallback behavior for objects with __repr__."""
-        encoder = AdvancedJsonEncoder()
 
         # Create an object that will use __repr__ fallback
         class CustomObject:
