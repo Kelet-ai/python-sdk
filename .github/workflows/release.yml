@@ -65,6 +65,10 @@ jobs:
             echo "released=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Build package
+        if: steps.released.outputs.released == 'true'
+        run: uv build
+
       - name: Publish to PyPI
         if: steps.released.outputs.released == 'true'
         run: uv publish --trusted-publishing always
