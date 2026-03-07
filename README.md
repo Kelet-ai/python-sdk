@@ -211,3 +211,9 @@ Even in alpha, Kelet does analysis that would take your team weeks to do manuall
 - **Support**: [GitHub Issues](https://github.com/Kelet-ai/python-sdk/issues)
 
 Built for teams shipping mission-critical AI agents.
+
+---
+
+## License
+
+MIT License — see [LICENSE.md](LICENSE.md) for details.
