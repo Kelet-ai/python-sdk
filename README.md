@@ -31,12 +31,12 @@ Three lines of code to start.
 
 **Using uv (recommended):**
 ```bash
-uv add git+https://${GITHUB_KELET_PAT}@github.com/Kelet-ai/python-sdk.git
+uv add kelet
 ```
 
 **Or using pip:**
 ```bash
-pip install git+https://${GITHUB_KELET_PAT}@github.com/Kelet-ai/python-sdk.git
+pip install kelet
 ```
 
 Set your API key:
