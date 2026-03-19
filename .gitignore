@@ -26,4 +26,4 @@ archive.zip
 .cache
 
 # macOS
-.DS_Store
+.DS_Store.worktrees
