@@ -1,6 +1,6 @@
 [project]
 name = "kelet"
-version = "1.0.0"
+version = "1.1.0"
 description = "Kelet SDK - OpenTelemetry integration for AI observability"
 readme = "README.md"
 license = {file = "LICENSE.md"}
