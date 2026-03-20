@@ -82,7 +82,44 @@ with kelet.agentic_session(session_id="user-123-request-456"):
     result = await agent.run("Book a flight to NYC")
 ```
 
+Also works as a decorator:
+
+```python
+@kelet.agentic_session(session_id="user-123-request-456")
+async def handle_request():
+    result = await agent.run("Book a flight to NYC")
+```
+
 But most users don't need this—instrumentation captures sessions automatically from pydantic-ai and other supported frameworks.
+
+### Agent Spans (Optional)
+
+Use `kelet.agent()` to create an explicit OTEL span wrapping a named agent invocation. All LLM calls inside become children of that span, making your trace tree readable.
+
+```python
+async with kelet.agentic_session(session_id="sess-123", user_id="user-1"):
+    async with kelet.agent(name="support-bot"):
+        result = await anthropic_client.messages.create(...)
+```
+
+Also works as a decorator:
+
+```python
+@kelet.agentic_session(session_id="sess-123")
+@kelet.agent(name="support-bot")
+async def handle(request):
+    return await anthropic_client.messages.create(...)
+```
+
+Multiple agents in one session are supported — each gets its own labeled span:
+
+```python
+async with kelet.agentic_session(session_id="sess-123"):
+    async with kelet.agent(name="classifier"):
+        label = await openai_client.chat.completions.create(...)
+    async with kelet.agent(name="responder"):
+        reply = await anthropic_client.messages.create(...)
+```
 
 ### Easy Feedback UI for React
 
@@ -157,8 +194,14 @@ kelet.configure(
 kelet.configure(api_key=None, project=None, auto_instrument=True)
 
 # Group operations by session for failure correlation
-with kelet.agentic_session(session_id="session-id"):
+# Works as context manager (sync + async) and decorator
+with kelet.agentic_session(session_id="session-id", user_id="user-id"):
     result = await agent.run(...)
+
+# Wrap a named agent invocation in an explicit OTEL span
+# Works as context manager (sync + async) and decorator
+async with kelet.agent(name="my-agent"):
+    result = await llm_client.messages.create(...)
 
 # Capture user feedback
 await kelet.signal(
@@ -171,6 +214,7 @@ await kelet.signal(
 session_id = kelet.get_session_id()
 trace_id = kelet.get_trace_id()
 user_id = kelet.get_user_id()
+agent_name = kelet.get_agent_name()  # Set by kelet.agent()
 
 # Manual shutdown (automatic on exit)
 kelet.shutdown()
