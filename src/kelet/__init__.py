@@ -32,7 +32,9 @@ Or use logfire as primary, kelet as secondary:
 
 from ._configure import configure, create_kelet_processor, shutdown
 from ._context import (
+    agent,
     agentic_session,
+    get_agent_name,
     get_session_id,
     get_trace_id,
     get_user_id,
@@ -45,7 +47,9 @@ __all__ = [
     "create_kelet_processor",
     "shutdown",
     "signal",
+    "agent",
     "agentic_session",
+    "get_agent_name",
     "get_session_id",
     "get_trace_id",
     "get_user_id",

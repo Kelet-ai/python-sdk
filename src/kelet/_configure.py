@@ -16,7 +16,7 @@ from opentelemetry.trace import ProxyTracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from ._config import KeletConfig, set_config
-from ._context import _session_id_var, _user_id_var, SESSION_ID_ATTR, USER_ID_ATTR
+from ._context import _session_id_var, _user_id_var, _agent_name_var, SESSION_ID_ATTR, USER_ID_ATTR, AGENT_NAME_ATTR
 
 # Track processors for shutdown
 _active_processors: list[SpanProcessor] = []
@@ -80,6 +80,9 @@ class _KeletSpanProcessor(SpanProcessor):
         user_id = _user_id_var.get()
         if user_id is not None:
             span.set_attribute(USER_ID_ATTR, user_id)
+        agent_name = _agent_name_var.get()
+        if agent_name is not None:
+            span.set_attribute(AGENT_NAME_ATTR, agent_name)
 
         self._wrapped.on_start(span, parent_context)
 
@@ -263,6 +266,9 @@ def _auto_instrument_frameworks() -> None:
 
     Currently supports:
     - pydantic-ai: Auto-instruments all Agent instances
+    - Anthropic (openinference)
+    - OpenAI (openinference)
+    - LangChain (openinference, also covers LangGraph)
     """
     try:
         from pydantic_ai import Agent  # pyright: ignore [reportMissingImports]
@@ -270,3 +276,24 @@ def _auto_instrument_frameworks() -> None:
         Agent.instrument_all()
     except ImportError:
         pass  # pydantic-ai not installed
+
+    # Anthropic (openinference)
+    try:
+        from openinference.instrumentation.anthropic import AnthropicInstrumentor
+        AnthropicInstrumentor().instrument()
+    except ImportError:
+        pass
+
+    # OpenAI (openinference)
+    try:
+        from openinference.instrumentation.openai import OpenAIInstrumentor
+        OpenAIInstrumentor().instrument()
+    except ImportError:
+        pass
+
+    # LangChain (also covers LangGraph — no dedicated langgraph package exists)
+    try:
+        from openinference.instrumentation.langchain import LangChainInstrumentor
+        LangChainInstrumentor().instrument()
+    except ImportError:
+        pass

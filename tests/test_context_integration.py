@@ -131,3 +131,74 @@ def test_session_attrs_dont_leak_after_exit(tracer, collector):
     after_attrs = _attrs(spans["after-session"])
     assert SESSION_ID_ATTR not in after_attrs
     assert USER_ID_ATTR not in after_attrs
+
+
+def test_child_span_gets_agent_name(tracer, collector):
+    """agent_name propagates to child spans via processor."""
+    from kelet._context import AGENT_NAME_ATTR, agent
+    with tracer.start_as_current_span("parent"):
+        with agentic_session(session_id="sess-1", user_id="user-1"):
+            with agent(name="support-bot"):
+                with tracer.start_as_current_span("child"):
+                    pass
+
+    spans = {s.name: s for s in collector.spans}
+    child_attrs = _attrs(spans["child"])
+    assert child_attrs[AGENT_NAME_ATTR] == "support-bot"
+
+
+def test_agent_child_span_has_agent_name_and_session(tracer, collector):
+    """agent() stamps child spans with agent name and session via processor."""
+    from kelet._context import AGENT_NAME_ATTR, agent
+    with agentic_session(session_id="sess-2"):
+        with agent(name="my-agent"):
+            with tracer.start_as_current_span("child-in-agent"):
+                pass
+
+    spans = {s.name: s for s in collector.spans}
+    child_attrs = _attrs(spans["child-in-agent"])
+    assert child_attrs[AGENT_NAME_ATTR] == "my-agent"
+    assert child_attrs[SESSION_ID_ATTR] == "sess-2"
+
+
+def test_agent_name_without_user_id(tracer, collector):
+    """agent(name=...) + session_id works fine without user_id."""
+    from kelet._context import AGENT_NAME_ATTR, agent
+    with tracer.start_as_current_span("parent"):
+        with agentic_session(session_id="sess-3"):
+            with agent(name="no-user-agent"):
+                with tracer.start_as_current_span("child"):
+                    pass
+
+    spans = {s.name: s for s in collector.spans}
+    child_attrs = _attrs(spans["child"])
+    assert child_attrs[SESSION_ID_ATTR] == "sess-3"
+    assert child_attrs[AGENT_NAME_ATTR] == "no-user-agent"
+    assert USER_ID_ATTR not in child_attrs
+
+
+def test_agent_name_doesnt_leak_after_exit(tracer, collector):
+    """After agent() exits, new spans don't get AGENT_NAME_ATTR."""
+    from kelet._context import AGENT_NAME_ATTR, agent
+    with tracer.start_as_current_span("inside-parent"):
+        with agentic_session(session_id="sess-4"):
+            with agent(name="temp-agent"):
+                with tracer.start_as_current_span("inside-child"):
+                    pass
+
+    with tracer.start_as_current_span("after-session"):
+        pass
+
+    spans = {s.name: s for s in collector.spans}
+    assert _attrs(spans["inside-child"])[AGENT_NAME_ATTR] == "temp-agent"
+    assert AGENT_NAME_ATTR not in _attrs(spans["after-session"])
+
+
+def test_span_outside_session_has_no_agent_name(tracer, collector):
+    """Spans outside agentic_session have no AGENT_NAME_ATTR."""
+    from kelet._context import AGENT_NAME_ATTR
+    with tracer.start_as_current_span("outside"):
+        pass
+
+    spans = {s.name: s for s in collector.spans}
+    assert AGENT_NAME_ATTR not in _attrs(spans["outside"])
