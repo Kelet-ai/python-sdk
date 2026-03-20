@@ -58,7 +58,7 @@ kelet.configure(
 ```python
 import kelet
 
-kelet.configure()  # Auto-instruments pydantic-ai and captures sessions
+kelet.configure()  # Auto-instruments pydantic-ai, Anthropic SDK, OpenAI SDK, LangChain/LangGraph
 
 # Your agent code works as-is - instrumentation is automatic
 result = await agent.run("Book a flight to NYC")
@@ -121,6 +121,21 @@ async with kelet.agentic_session(session_id="sess-123"):
         reply = await anthropic_client.messages.create(...)
 ```
 
+### Auto-Instrumentation
+
+`kelet.configure()` automatically detects and instruments supported libraries — no extra code needed:
+
+| Library | Install extra |
+|---------|---------------|
+| **Pydantic AI** | _(included)_ |
+| **Anthropic SDK** | `pip install kelet[anthropic]` |
+| **OpenAI SDK** | `pip install kelet[openai]` |
+| **LangChain / LangGraph** | `pip install kelet[langchain]` |
+
+All four at once: `pip install kelet[all]`
+
+If a library isn't installed, Kelet silently skips it — no errors.
+
 ### Easy Feedback UI for React
 
 Building a React frontend? Use the [Kelet Feedback UI](https://github.com/kelet-ai/feedback-ui) component for instant implicit and explicit feedback collection.
@@ -181,7 +196,7 @@ Or pass directly to `configure()`:
 kelet.configure(
     api_key="your_api_key",
     project="production",
-    auto_instrument=True  # Instruments pydantic-ai automatically
+    auto_instrument=True  # Auto-instruments pydantic-ai, Anthropic, OpenAI, LangChain/LangGraph
 )
 ```
 
