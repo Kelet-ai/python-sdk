@@ -172,9 +172,9 @@ class _AgentContext:
     def _start(self) -> None:
         tracer = trace.get_tracer("kelet")
         attrs: dict = {"gen_ai.operation.name": "invoke_agent", AGENT_NAME_ATTR: self._name}
-        if sid := _session_id_var.get():
+        if (sid := _session_id_var.get()) is not None:
             attrs[SESSION_ID_ATTR] = sid
-        if uid := _user_id_var.get():
+        if (uid := _user_id_var.get()) is not None:
             attrs[USER_ID_ATTR] = uid
         self._span = tracer.start_span(f"agent {self._name}", attributes=attrs)
         self._agent_token = _agent_name_var.set(self._name)

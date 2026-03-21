@@ -8,7 +8,7 @@ from opentelemetry import baggage as otel_baggage, trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.propagate import set_global_textmap
+from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.trace import TracerProvider, SpanProcessor, ReadableSpan, Span
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -87,7 +87,7 @@ class _KeletSpanProcessor(SpanProcessor):
 
         # Session ID: context var > baggage (cross-process only)
         session_id = _session_id_var.get()
-        if session_id is None:
+        if session_id is None and not in_local_session:
             session_id = otel_baggage.get_baggage("kelet.session_id", context=parent_context)
         if session_id is not None:
             span.set_attribute(SESSION_ID_ATTR, session_id)
@@ -244,6 +244,22 @@ def configure(
     existing_provider = trace.get_tracer_provider()
     is_noop = isinstance(existing_provider, ProxyTracerProvider)
 
+    # Ensure W3C Baggage propagation is enabled so that cross-process baggage
+    # headers are extracted from incoming requests and available in parent_context.
+    # We do this in both the existing-provider and new-provider paths.
+    existing_textmap = get_global_textmap()
+    if not isinstance(existing_textmap, CompositePropagator) or not any(
+        isinstance(p, W3CBaggagePropagator) for p in getattr(existing_textmap, "_propagators", [])
+    ):
+        set_global_textmap(
+            CompositePropagator(
+                [
+                    TraceContextTextMapPropagator(),
+                    W3CBaggagePropagator(),
+                ]
+            )
+        )
+
     if not is_noop:
         # Existing provider found - try to add our processor
         if not hasattr(existing_provider, "add_span_processor"):
@@ -255,14 +271,6 @@ def configure(
         existing_provider.add_span_processor(kelet_processor)  # type: ignore[union-attr]
     else:
         # No existing provider - create our own
-        set_global_textmap(
-            CompositePropagator(
-                [
-                    TraceContextTextMapPropagator(),
-                    W3CBaggagePropagator(),
-                ]
-            )
-        )
 
         provider = TracerProvider()
         provider.add_span_processor(kelet_processor)
