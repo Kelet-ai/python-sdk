@@ -92,6 +92,26 @@ async def handle_request():
 
 But most users don't need this—instrumentation captures sessions automatically from pydantic-ai and other supported frameworks.
 
+### Using Different Projects Under the Same Application
+
+If your application hosts multiple independent root agent systems that belong to different Kelet projects (for example `customer_support_prod` and `billing_prod`), you can override the global project on a per-session basis using the `project` parameter on `agentic_session`:
+
+```python
+import kelet
+
+kelet.configure(api_key="your_api_key", project="default-project")
+
+# Spans inside this session are attributed to "customer_support_prod"
+async with kelet.agentic_session(session_id="sess-123", user_id="user-1", project="customer_support_prod"):
+    result = await customer_support_agent.run("How do I return my order?")
+
+# Spans inside this session are attributed to "billing_prod"
+async with kelet.agentic_session(session_id="sess-456", user_id="user-2", project="billing_prod"):
+    result = await billing_agent.run("Show my invoice for last month")
+```
+
+The `project` override is automatically propagated via W3C Baggage to any downstream services that use the Kelet SDK. Those services will stamp the correct `kelet.project`, `session_id`, and `user_id` on their spans without needing to call `agentic_session` themselves — the baggage carrier handles it transparently across process boundaries.
+
 ### Agent Spans (Optional)
 
 Use `kelet.agent()` to create an explicit OTEL span wrapping a named agent invocation. All LLM calls inside become children of that span, making your trace tree readable.
@@ -210,7 +230,7 @@ kelet.configure(api_key=None, project=None, auto_instrument=True)
 
 # Group operations by session for failure correlation
 # Works as context manager (sync + async) and decorator
-with kelet.agentic_session(session_id="session-id", user_id="user-id"):
+with kelet.agentic_session(session_id="session-id", user_id="user-id", project="project-override"):  # project optional
     result = await agent.run(...)
 
 # Wrap a named agent invocation in an explicit OTEL span

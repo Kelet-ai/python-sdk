@@ -4,11 +4,11 @@ import atexit
 import os
 from typing import NamedTuple, Optional, Sequence
 
-from opentelemetry import trace
+from opentelemetry import baggage as otel_baggage, trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.propagate import set_global_textmap
+from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.trace import TracerProvider, SpanProcessor, ReadableSpan, Span
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -16,7 +16,7 @@ from opentelemetry.trace import ProxyTracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from ._config import KeletConfig, set_config
-from ._context import _session_id_var, _user_id_var, _agent_name_var, SESSION_ID_ATTR, USER_ID_ATTR, AGENT_NAME_ATTR
+from ._context import _session_id_var, _user_id_var, _agent_name_var, _project_override_var, SESSION_ID_ATTR, USER_ID_ATTR, AGENT_NAME_ATTR
 
 # Track processors for shutdown
 _active_processors: list[SpanProcessor] = []
@@ -71,13 +71,33 @@ class _KeletSpanProcessor(SpanProcessor):
         self._project = project
 
     def on_start(self, span: Span, parent_context: Optional[Context] = None) -> None:
-        span.set_attribute("kelet.project", self._project)
+        # Determine whether we are inside a local agentic_session (via ContextVar).
+        # When inside a local session, ContextVars are authoritative — we do NOT fall
+        # back to baggage for user_id or project, which would otherwise cause an inner
+        # session (with no user_id/project) to inherit the outer session's values via
+        # baggage. Baggage fallback is reserved for spans outside any local session,
+        # i.e. the cross-process propagation use case.
+        in_local_session = _session_id_var.get() is not None
 
-        # Propagate session/user attributes from agentic_session context
+        # Project: context var > baggage (cross-process only) > global config
+        cv_project = _project_override_var.get()
+        if cv_project is None and not in_local_session:
+            cv_project = otel_baggage.get_baggage("kelet.project", context=parent_context)
+        span.set_attribute("kelet.project", cv_project if cv_project is not None else self._project)
+
+        # Session ID: context var > baggage (cross-process only)
         session_id = _session_id_var.get()
+        if session_id is None:
+            # in_local_session is derived from session_id_var, so if session_id is
+            # None we are necessarily outside any local session — no guard needed.
+            session_id = otel_baggage.get_baggage("kelet.session_id", context=parent_context)
         if session_id is not None:
             span.set_attribute(SESSION_ID_ATTR, session_id)
+
+        # User ID: context var > baggage (cross-process only)
         user_id = _user_id_var.get()
+        if user_id is None and not in_local_session:
+            user_id = otel_baggage.get_baggage("kelet.user_id", context=parent_context)
         if user_id is not None:
             span.set_attribute(USER_ID_ATTR, user_id)
         agent_name = _agent_name_var.get()
@@ -142,6 +162,21 @@ def create_kelet_processor(
         kelet.configure()  # Sets up config for signal() API
     """
     cfg = _resolve_config(api_key, project, base_url)
+
+    # Ensure W3C Baggage propagation is active so baggage from upstream HTTP
+    # headers is extracted into parent_context for the processor's baggage fallback.
+    existing_textmap = get_global_textmap()
+    if not isinstance(existing_textmap, CompositePropagator) or not any(
+        isinstance(p, W3CBaggagePropagator) for p in getattr(existing_textmap, "_propagators", [])
+    ):
+        set_global_textmap(
+            CompositePropagator(
+                [
+                    TraceContextTextMapPropagator(),
+                    W3CBaggagePropagator(),
+                ]
+            )
+        )
 
     # Create OTLP exporter to send traces to Kelet
     exporter = OTLPSpanExporter(
@@ -226,6 +261,22 @@ def configure(
     existing_provider = trace.get_tracer_provider()
     is_noop = isinstance(existing_provider, ProxyTracerProvider)
 
+    # Ensure W3C Baggage propagation is enabled so that cross-process baggage
+    # headers are extracted from incoming requests and available in parent_context.
+    # We do this in both the existing-provider and new-provider paths.
+    existing_textmap = get_global_textmap()
+    if not isinstance(existing_textmap, CompositePropagator) or not any(
+        isinstance(p, W3CBaggagePropagator) for p in getattr(existing_textmap, "_propagators", [])
+    ):
+        set_global_textmap(
+            CompositePropagator(
+                [
+                    TraceContextTextMapPropagator(),
+                    W3CBaggagePropagator(),
+                ]
+            )
+        )
+
     if not is_noop:
         # Existing provider found - try to add our processor
         if not hasattr(existing_provider, "add_span_processor"):
@@ -237,14 +288,6 @@ def configure(
         existing_provider.add_span_processor(kelet_processor)  # type: ignore[union-attr]
     else:
         # No existing provider - create our own
-        set_global_textmap(
-            CompositePropagator(
-                [
-                    TraceContextTextMapPropagator(),
-                    W3CBaggagePropagator(),
-                ]
-            )
-        )
 
         provider = TracerProvider()
         provider.add_span_processor(kelet_processor)
