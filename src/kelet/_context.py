@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from functools import wraps
 from typing import Optional
 
-from opentelemetry import context as otel_context, trace
+from opentelemetry import baggage, context as otel_context, trace
 
 # Context variables for session/user (accessible without baggage propagation)
 _session_id_var: ContextVar[Optional[str]] = ContextVar(
@@ -13,6 +13,7 @@ _session_id_var: ContextVar[Optional[str]] = ContextVar(
 )
 _user_id_var: ContextVar[Optional[str]] = ContextVar("kelet_user_id", default=None)
 _agent_name_var: ContextVar[Optional[str]] = ContextVar("kelet_agent_name", default=None)
+_project_override_var: ContextVar[Optional[str]] = ContextVar("kelet_project", default=None)
 
 # Semantic convention attribute keys (for span attributes)
 SESSION_ID_ATTR = "gen_ai.conversation.id"
@@ -60,17 +61,27 @@ def get_agent_name() -> Optional[str]:
 
 
 class _AgenticSessionContext:
-    def __init__(self, *, session_id: str, user_id: Optional[str] = None, **kwargs: object):
-        self._session_id = session_id
-        self._user_id = user_id
-        self._kwargs = kwargs
+    def __init__(self, *, session_id: str, user_id: Optional[str] = None, project: Optional[str] = None, **kwargs: object):
+        self._session_id: str = session_id
+        self._user_id: Optional[str] = user_id
+        self._project: Optional[str] = project
+        self._kwargs: dict[str, object] = kwargs
         self._tokens: list = []
+        self._baggage_token: Optional[object] = None
 
     def _enter(self) -> None:
         self._tokens = [
             _session_id_var.set(self._session_id),
             _user_id_var.set(self._user_id),
+            _project_override_var.set(self._project),
         ]
+        ctx = otel_context.get_current()
+        ctx = baggage.set_baggage("kelet.session_id", self._session_id, context=ctx)
+        if self._user_id:
+            ctx = baggage.set_baggage("kelet.user_id", self._user_id, context=ctx)
+        if self._project:
+            ctx = baggage.set_baggage("kelet.project", self._project, context=ctx)
+        self._baggage_token = otel_context.attach(ctx)
         span = trace.get_current_span()
         if span and span.is_recording():
             span.set_attribute(SESSION_ID_ATTR, self._session_id)
@@ -80,6 +91,8 @@ class _AgenticSessionContext:
                 span.set_attribute(f"metadata.{k}", v if isinstance(v, (str, bool, int, float)) else str(v))
 
     def _exit(self) -> None:
+        if self._baggage_token is not None:
+            otel_context.detach(self._baggage_token)
         for token in reversed(self._tokens):
             token.var.reset(token)
 
@@ -104,6 +117,7 @@ class _AgenticSessionContext:
                 async with _AgenticSessionContext(
                     session_id=self._session_id,
                     user_id=self._user_id,
+                    project=self._project,
                     **self._kwargs,
                 ):
                     return await fn(*args, **kwargs)
@@ -114,13 +128,14 @@ class _AgenticSessionContext:
             with _AgenticSessionContext(
                 session_id=self._session_id,
                 user_id=self._user_id,
+                project=self._project,
                 **self._kwargs,
             ):
                 return fn(*args, **kwargs)
         return sync_wrapper
 
 
-def agentic_session(*, session_id: str, user_id: Optional[str] = None, **kwargs: object) -> _AgenticSessionContext:
+def agentic_session(*, session_id: str, user_id: Optional[str] = None, project: Optional[str] = None, **kwargs: object) -> _AgenticSessionContext:
     """Context manager / decorator that sets agentic session context.
 
     Supports:
@@ -132,9 +147,10 @@ def agentic_session(*, session_id: str, user_id: Optional[str] = None, **kwargs:
     Args:
         session_id: Conversation/session identifier (gen_ai.conversation.id)
         user_id: Optional user identifier (user.id)
+        project: Optional project override (overrides global kelet.project for this session)
         **kwargs: Additional metadata stamped as metadata.{key} span attributes
     """
-    return _AgenticSessionContext(session_id=session_id, user_id=user_id, **kwargs)
+    return _AgenticSessionContext(session_id=session_id, user_id=user_id, project=project, **kwargs)
 
 
 class _AgentContext:

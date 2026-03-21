@@ -4,7 +4,7 @@ import atexit
 import os
 from typing import NamedTuple, Optional, Sequence
 
-from opentelemetry import trace
+from opentelemetry import baggage as otel_baggage, trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -16,7 +16,7 @@ from opentelemetry.trace import ProxyTracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from ._config import KeletConfig, set_config
-from ._context import _session_id_var, _user_id_var, _agent_name_var, SESSION_ID_ATTR, USER_ID_ATTR, AGENT_NAME_ATTR
+from ._context import _session_id_var, _user_id_var, _agent_name_var, _project_override_var, SESSION_ID_ATTR, USER_ID_ATTR, AGENT_NAME_ATTR
 
 # Track processors for shutdown
 _active_processors: list[SpanProcessor] = []
@@ -71,13 +71,31 @@ class _KeletSpanProcessor(SpanProcessor):
         self._project = project
 
     def on_start(self, span: Span, parent_context: Optional[Context] = None) -> None:
-        span.set_attribute("kelet.project", self._project)
+        # Determine whether we are inside a local agentic_session (via ContextVar).
+        # When inside a local session, ContextVars are authoritative — we do NOT fall
+        # back to baggage for user_id or project, which would otherwise cause an inner
+        # session (with no user_id/project) to inherit the outer session's values via
+        # baggage. Baggage fallback is reserved for spans outside any local session,
+        # i.e. the cross-process propagation use case.
+        in_local_session = _session_id_var.get() is not None
 
-        # Propagate session/user attributes from agentic_session context
+        # Project: context var > baggage (cross-process only) > global config
+        cv_project = _project_override_var.get()
+        if cv_project is None and not in_local_session:
+            cv_project = otel_baggage.get_baggage("kelet.project", context=parent_context)
+        span.set_attribute("kelet.project", cv_project or self._project)
+
+        # Session ID: context var > baggage (cross-process only)
         session_id = _session_id_var.get()
+        if session_id is None:
+            session_id = otel_baggage.get_baggage("kelet.session_id", context=parent_context)
         if session_id is not None:
             span.set_attribute(SESSION_ID_ATTR, session_id)
+
+        # User ID: context var > baggage (cross-process only)
         user_id = _user_id_var.get()
+        if user_id is None and not in_local_session:
+            user_id = otel_baggage.get_baggage("kelet.user_id", context=parent_context)
         if user_id is not None:
             span.set_attribute(USER_ID_ATTR, user_id)
         agent_name = _agent_name_var.get()
