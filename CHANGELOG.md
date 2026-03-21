@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.1 (2026-03-21)
+
+### Bug Fixes
+
+- Upgrade deps
+  ([`2497619`](https://github.com/Kelet-ai/python-sdk/commit/249761946683f931d1d2243d1093daf0d800c918))
+
+
 ## v1.2.0 (2026-03-21)
 
 ### Bug Fixes
