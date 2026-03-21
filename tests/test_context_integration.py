@@ -287,3 +287,50 @@ def test_nested_sessions_restore_outer_project(tracer, collector):
     assert _attrs(spans["outer-span"])["kelet.project"] == "outer-project"
     assert _attrs(spans["inner-span"])["kelet.project"] == "inner-project"
     assert _attrs(spans["after-inner"])["kelet.project"] == "outer-project"
+
+
+def test_inner_session_clears_outer_user_id_from_baggage(tracer, collector):
+    """Inner agentic_session without user_id explicitly removes outer user_id from baggage.
+
+    Cross-process scenario: the inner session must clear kelet.user_id from the
+    baggage it propagates downstream, not merely suppress it in-process.
+    We simulate this by reading baggage directly inside the inner session context.
+    """
+    outer_baggage_user: list[str | None] = []
+    inner_baggage_user: list[str | None] = []
+
+    with agentic_session(session_id="outer", user_id="outer-user"):
+        outer_baggage_user.append(
+            otel_baggage.get_baggage("kelet.user_id", context=otel_context.get_current())
+        )
+        with agentic_session(session_id="inner"):  # no user_id
+            inner_baggage_user.append(
+                otel_baggage.get_baggage("kelet.user_id", context=otel_context.get_current())
+            )
+            with tracer.start_as_current_span("inner-span"):
+                pass
+
+    # Outer session should have user_id in baggage
+    assert outer_baggage_user[0] == "outer-user"
+    # Inner session must have cleared it from baggage (cross-process safety)
+    assert inner_baggage_user[0] is None
+
+
+def test_inner_session_clears_outer_project_from_baggage(tracer, collector):
+    """Inner agentic_session without project explicitly removes outer project from baggage."""
+    outer_baggage_proj: list[str | None] = []
+    inner_baggage_proj: list[str | None] = []
+
+    with agentic_session(session_id="outer", project="outer-project"):
+        outer_baggage_proj.append(
+            otel_baggage.get_baggage("kelet.project", context=otel_context.get_current())
+        )
+        with agentic_session(session_id="inner"):  # no project
+            inner_baggage_proj.append(
+                otel_baggage.get_baggage("kelet.project", context=otel_context.get_current())
+            )
+            with tracer.start_as_current_span("inner-span"):
+                pass
+
+    assert outer_baggage_proj[0] == "outer-project"
+    assert inner_baggage_proj[0] is None

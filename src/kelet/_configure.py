@@ -83,7 +83,7 @@ class _KeletSpanProcessor(SpanProcessor):
         cv_project = _project_override_var.get()
         if cv_project is None and not in_local_session:
             cv_project = otel_baggage.get_baggage("kelet.project", context=parent_context)
-        span.set_attribute("kelet.project", cv_project or self._project)
+        span.set_attribute("kelet.project", cv_project if cv_project is not None else self._project)
 
         # Session ID: context var > baggage (cross-process only)
         session_id = _session_id_var.get()

@@ -77,15 +77,24 @@ class _AgenticSessionContext:
         ]
         ctx = otel_context.get_current()
         ctx = baggage.set_baggage("kelet.session_id", self._session_id, context=ctx)
-        if self._user_id:
+        # Explicitly set or clear user_id/project baggage so that an inner session
+        # without these values does not propagate the outer session's values downstream
+        # (cross-process scenario). The inLocalSession guard in the processor prevents
+        # in-process bleed-through, but baggage headers are sent to downstream services
+        # regardless — so we must clear stale keys explicitly here.
+        if self._user_id is not None:
             ctx = baggage.set_baggage("kelet.user_id", self._user_id, context=ctx)
-        if self._project:
+        else:
+            ctx = baggage.remove_baggage("kelet.user_id", context=ctx)
+        if self._project is not None:
             ctx = baggage.set_baggage("kelet.project", self._project, context=ctx)
+        else:
+            ctx = baggage.remove_baggage("kelet.project", context=ctx)
         self._baggage_token = otel_context.attach(ctx)
         span = trace.get_current_span()
         if span and span.is_recording():
             span.set_attribute(SESSION_ID_ATTR, self._session_id)
-            if self._user_id:
+            if self._user_id is not None:
                 span.set_attribute(USER_ID_ATTR, self._user_id)
             for k, v in self._kwargs.items():
                 span.set_attribute(f"metadata.{k}", v if isinstance(v, (str, bool, int, float)) else str(v))
