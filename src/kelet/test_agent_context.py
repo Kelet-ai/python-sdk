@@ -14,7 +14,6 @@ from kelet._context import (
     get_user_id,
     AGENT_NAME_ATTR,
     SESSION_ID_ATTR,
-    USER_ID_ATTR,
 )
 from kelet._configure import _KeletSpanProcessor
 
