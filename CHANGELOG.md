@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-03-23)
+
+### Features
+
+- **KEL-343**: Add span_processor param to configure()
+  ([#5](https://github.com/Kelet-ai/python-sdk/pull/5),
+  [`e6f0467`](https://github.com/Kelet-ai/python-sdk/commit/e6f04678a106b192f03c56adfe79e715b0da8ea7))
+
+
 ## v1.2.2 (2026-03-23)
 
 ### Bug Fixes
