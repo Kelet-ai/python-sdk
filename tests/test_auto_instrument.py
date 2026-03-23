@@ -19,7 +19,9 @@ def test_anthropic_instrumented_when_installed():
     mock_module = MagicMock()
     mock_module.AnthropicInstrumentor = inst_class
 
-    with patch.dict(sys.modules, {"openinference.instrumentation.anthropic": mock_module}):
+    with patch.dict(
+        sys.modules, {"openinference.instrumentation.anthropic": mock_module}
+    ):
         _auto_instrument_frameworks()
 
     inst_class.assert_called_once()
@@ -45,7 +47,9 @@ def test_langchain_instrumented_when_installed():
     mock_module = MagicMock()
     mock_module.LangChainInstrumentor = inst_class
 
-    with patch.dict(sys.modules, {"openinference.instrumentation.langchain": mock_module}):
+    with patch.dict(
+        sys.modules, {"openinference.instrumentation.langchain": mock_module}
+    ):
         _auto_instrument_frameworks()
 
     inst_class.assert_called_once()
@@ -70,11 +74,14 @@ def test_partial_install_independent():
     langchain_module = MagicMock()
     langchain_module.LangChainInstrumentor = langchain_class
 
-    with patch.dict(sys.modules, {
-        "openinference.instrumentation.anthropic": None,  # simulate missing
-        "openinference.instrumentation.openai": openai_module,
-        "openinference.instrumentation.langchain": langchain_module,
-    }):
+    with patch.dict(
+        sys.modules,
+        {
+            "openinference.instrumentation.anthropic": None,  # simulate missing
+            "openinference.instrumentation.openai": openai_module,
+            "openinference.instrumentation.langchain": langchain_module,
+        },
+    ):
         _auto_instrument_frameworks()
 
     openai_inst.instrument.assert_called_once()

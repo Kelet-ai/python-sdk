@@ -16,7 +16,16 @@ from opentelemetry.trace import ProxyTracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from ._config import KeletConfig, set_config
-from ._context import _session_id_var, _user_id_var, _agent_name_var, _project_override_var, SESSION_ID_ATTR, USER_ID_ATTR, AGENT_NAME_ATTR
+from ._context import (
+    _session_id_var,
+    _user_id_var,
+    _agent_name_var,
+    _project_override_var,
+    _metadata_kwargs_var,
+    SESSION_ID_ATTR,
+    USER_ID_ATTR,
+    AGENT_NAME_ATTR,
+)
 
 # Track processors for shutdown
 _active_processors: list[SpanProcessor] = []
@@ -82,15 +91,21 @@ class _KeletSpanProcessor(SpanProcessor):
         # Project: context var > baggage (cross-process only) > global config
         cv_project = _project_override_var.get()
         if cv_project is None and not in_local_session:
-            cv_project = otel_baggage.get_baggage("kelet.project", context=parent_context)
-        span.set_attribute("kelet.project", cv_project if cv_project is not None else self._project)
+            cv_project = otel_baggage.get_baggage(
+                "kelet.project", context=parent_context
+            )
+        span.set_attribute(
+            "kelet.project", cv_project if cv_project is not None else self._project
+        )
 
         # Session ID: context var > baggage (cross-process only)
         session_id = _session_id_var.get()
         if session_id is None:
             # in_local_session is derived from session_id_var, so if session_id is
             # None we are necessarily outside any local session — no guard needed.
-            session_id = otel_baggage.get_baggage("kelet.session_id", context=parent_context)
+            session_id = otel_baggage.get_baggage(
+                "kelet.session_id", context=parent_context
+            )
         if session_id is not None:
             span.set_attribute(SESSION_ID_ATTR, session_id)
 
@@ -103,6 +118,25 @@ class _KeletSpanProcessor(SpanProcessor):
         agent_name = _agent_name_var.get()
         if agent_name is not None:
             span.set_attribute(AGENT_NAME_ATTR, agent_name)
+
+        # Metadata kwargs: context var > baggage (cross-process only)
+        metadata_kwargs = _metadata_kwargs_var.get()
+        if metadata_kwargs is None and not in_local_session:
+            all_baggage = otel_baggage.get_all(context=parent_context)
+            if all_baggage:
+                metadata_kwargs = {}
+                for bk, bv in all_baggage.items():
+                    if bk.startswith("kelet.metadata."):
+                        key = bk[len("kelet.metadata.") :]
+                        metadata_kwargs[key] = bv
+                if not metadata_kwargs:
+                    metadata_kwargs = None
+        if metadata_kwargs:
+            for k, v in metadata_kwargs.items():
+                span.set_attribute(
+                    f"metadata.{k}",
+                    v if isinstance(v, (str, bool, int, float)) else str(v),
+                )
 
         self._wrapped.on_start(span, parent_context)
 
@@ -167,7 +201,8 @@ def create_kelet_processor(
     # headers is extracted into parent_context for the processor's baggage fallback.
     existing_textmap = get_global_textmap()
     if not isinstance(existing_textmap, CompositePropagator) or not any(
-        isinstance(p, W3CBaggagePropagator) for p in getattr(existing_textmap, "_propagators", [])
+        isinstance(p, W3CBaggagePropagator)
+        for p in getattr(existing_textmap, "_propagators", [])
     ):
         set_global_textmap(
             CompositePropagator(
@@ -266,7 +301,8 @@ def configure(
     # We do this in both the existing-provider and new-provider paths.
     existing_textmap = get_global_textmap()
     if not isinstance(existing_textmap, CompositePropagator) or not any(
-        isinstance(p, W3CBaggagePropagator) for p in getattr(existing_textmap, "_propagators", [])
+        isinstance(p, W3CBaggagePropagator)
+        for p in getattr(existing_textmap, "_propagators", [])
     ):
         set_global_textmap(
             CompositePropagator(
@@ -323,6 +359,7 @@ def _auto_instrument_frameworks() -> None:
     # Anthropic (openinference)
     try:
         from openinference.instrumentation.anthropic import AnthropicInstrumentor
+
         AnthropicInstrumentor().instrument()
     except ImportError:
         pass
@@ -330,6 +367,7 @@ def _auto_instrument_frameworks() -> None:
     # OpenAI (openinference)
     try:
         from openinference.instrumentation.openai import OpenAIInstrumentor
+
         OpenAIInstrumentor().instrument()
     except ImportError:
         pass
@@ -337,6 +375,7 @@ def _auto_instrument_frameworks() -> None:
     # LangChain (also covers LangGraph — no dedicated langgraph package exists)
     try:
         from openinference.instrumentation.langchain import LangChainInstrumentor
+
         LangChainInstrumentor().instrument()
     except ImportError:
         pass

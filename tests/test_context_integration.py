@@ -136,6 +136,7 @@ def test_session_attrs_dont_leak_after_exit(tracer, collector):
 def test_child_span_gets_agent_name(tracer, collector):
     """agent_name propagates to child spans via processor."""
     from kelet._context import AGENT_NAME_ATTR, agent
+
     with tracer.start_as_current_span("parent"):
         with agentic_session(session_id="sess-1", user_id="user-1"):
             with agent(name="support-bot"):
@@ -150,6 +151,7 @@ def test_child_span_gets_agent_name(tracer, collector):
 def test_agent_child_span_has_agent_name_and_session(tracer, collector):
     """agent() stamps child spans with agent name and session via processor."""
     from kelet._context import AGENT_NAME_ATTR, agent
+
     with agentic_session(session_id="sess-2"):
         with agent(name="my-agent"):
             with tracer.start_as_current_span("child-in-agent"):
@@ -164,6 +166,7 @@ def test_agent_child_span_has_agent_name_and_session(tracer, collector):
 def test_agent_name_without_user_id(tracer, collector):
     """agent(name=...) + session_id works fine without user_id."""
     from kelet._context import AGENT_NAME_ATTR, agent
+
     with tracer.start_as_current_span("parent"):
         with agentic_session(session_id="sess-3"):
             with agent(name="no-user-agent"):
@@ -180,6 +183,7 @@ def test_agent_name_without_user_id(tracer, collector):
 def test_agent_name_doesnt_leak_after_exit(tracer, collector):
     """After agent() exits, new spans don't get AGENT_NAME_ATTR."""
     from kelet._context import AGENT_NAME_ATTR, agent
+
     with tracer.start_as_current_span("inside-parent"):
         with agentic_session(session_id="sess-4"):
             with agent(name="temp-agent"):
@@ -197,6 +201,7 @@ def test_agent_name_doesnt_leak_after_exit(tracer, collector):
 def test_span_outside_session_has_no_agent_name(tracer, collector):
     """Spans outside agentic_session have no AGENT_NAME_ATTR."""
     from kelet._context import AGENT_NAME_ATTR
+
     with tracer.start_as_current_span("outside"):
         pass
 
@@ -260,16 +265,16 @@ def test_project_override_doesnt_leak_after_exit(tracer, collector):
     assert _attrs(spans["outside"])["kelet.project"] == "test-project"
 
 
-def test_inner_session_without_user_id_does_not_inherit_outer_via_baggage(tracer, collector):
-    """Inner agentic_session without user_id should not inherit outer user_id from baggage."""
+def test_inner_session_without_user_id_inherits_outer_via_nesting(tracer, collector):
+    """Inner agentic_session without user_id inherits outer user_id via nesting."""
     with agentic_session(session_id="outer", user_id="outer-user"):
-        with agentic_session(session_id="inner"):  # no user_id
+        with agentic_session(session_id="inner"):  # no user_id — inherits outer
             with tracer.start_as_current_span("inner-span"):
                 pass
 
     spans = {s.name: s for s in collector.spans}
     attrs = _attrs(spans["inner-span"])
-    assert attrs.get(USER_ID_ATTR) is None
+    assert attrs[USER_ID_ATTR] == "outer-user"
 
 
 def test_nested_sessions_restore_outer_project(tracer, collector):
@@ -289,48 +294,114 @@ def test_nested_sessions_restore_outer_project(tracer, collector):
     assert _attrs(spans["after-inner"])["kelet.project"] == "outer-project"
 
 
-def test_inner_session_clears_outer_user_id_from_baggage(tracer, collector):
-    """Inner agentic_session without user_id explicitly removes outer user_id from baggage.
+def test_inner_session_inherits_outer_user_id_in_baggage(tracer, collector):
+    """Inner agentic_session without user_id inherits outer user_id in baggage (nesting).
 
-    Cross-process scenario: the inner session must clear kelet.user_id from the
-    baggage it propagates downstream, not merely suppress it in-process.
-    We simulate this by reading baggage directly inside the inner session context.
+    Cross-process scenario: the inner session propagates the inherited user_id
+    downstream via baggage.
     """
     outer_baggage_user: list[str | None] = []
     inner_baggage_user: list[str | None] = []
 
     with agentic_session(session_id="outer", user_id="outer-user"):
         outer_baggage_user.append(
-            otel_baggage.get_baggage("kelet.user_id", context=otel_context.get_current())
+            otel_baggage.get_baggage(
+                "kelet.user_id", context=otel_context.get_current()
+            )
         )
-        with agentic_session(session_id="inner"):  # no user_id
+        with agentic_session(session_id="inner"):  # no user_id — inherits outer
             inner_baggage_user.append(
-                otel_baggage.get_baggage("kelet.user_id", context=otel_context.get_current())
+                otel_baggage.get_baggage(
+                    "kelet.user_id", context=otel_context.get_current()
+                )
             )
             with tracer.start_as_current_span("inner-span"):
                 pass
 
     # Outer session should have user_id in baggage
     assert outer_baggage_user[0] == "outer-user"
-    # Inner session must have cleared it from baggage (cross-process safety)
-    assert inner_baggage_user[0] is None
+    # Inner session inherits outer user_id in baggage (nesting propagation)
+    assert inner_baggage_user[0] == "outer-user"
 
 
-def test_inner_session_clears_outer_project_from_baggage(tracer, collector):
-    """Inner agentic_session without project explicitly removes outer project from baggage."""
+def test_inner_session_inherits_outer_project_in_baggage(tracer, collector):
+    """Inner agentic_session without project inherits outer project in baggage (nesting)."""
     outer_baggage_proj: list[str | None] = []
     inner_baggage_proj: list[str | None] = []
 
     with agentic_session(session_id="outer", project="outer-project"):
         outer_baggage_proj.append(
-            otel_baggage.get_baggage("kelet.project", context=otel_context.get_current())
+            otel_baggage.get_baggage(
+                "kelet.project", context=otel_context.get_current()
+            )
         )
-        with agentic_session(session_id="inner"):  # no project
+        with agentic_session(session_id="inner"):  # no project — inherits outer
             inner_baggage_proj.append(
-                otel_baggage.get_baggage("kelet.project", context=otel_context.get_current())
+                otel_baggage.get_baggage(
+                    "kelet.project", context=otel_context.get_current()
+                )
             )
             with tracer.start_as_current_span("inner-span"):
                 pass
 
     assert outer_baggage_proj[0] == "outer-project"
-    assert inner_baggage_proj[0] is None
+    # Inner session inherits outer project in baggage (nesting propagation)
+    assert inner_baggage_proj[0] == "outer-project"
+
+
+# --- Metadata kwargs propagation tests ---
+
+
+def test_child_span_has_metadata_kwargs(tracer, collector):
+    """Child span inside agentic_session with kwargs gets metadata.* attributes via processor."""
+    with agentic_session(session_id="sess-kw", **{"$kelet_internal": True}):  # type: ignore[arg-type]
+        with tracer.start_as_current_span("child"):
+            pass
+
+    spans = {s.name: s for s in collector.spans}
+    child_attrs = _attrs(spans["child"])
+    assert child_attrs["metadata.$kelet_internal"] is True
+
+
+def test_nested_session_child_span_inherits_user_id(tracer, collector):
+    """Nested session without user_id: child span has outer's user_id."""
+    with agentic_session(session_id="outer", user_id="outer-user"):
+        with agentic_session(session_id="inner"):
+            with tracer.start_as_current_span("inner-span"):
+                pass
+
+    spans = {s.name: s for s in collector.spans}
+    attrs = _attrs(spans["inner-span"])
+    assert attrs[USER_ID_ATTR] == "outer-user"
+
+
+def test_nested_session_child_span_inherits_kwargs(tracer, collector):
+    """Nested sessions: child span has merged kwargs."""
+    with agentic_session(session_id="outer", a="1", b="2"):
+        with agentic_session(session_id="inner", b="override", c="3"):
+            with tracer.start_as_current_span("inner-span"):
+                pass
+
+    spans = {s.name: s for s in collector.spans}
+    attrs = _attrs(spans["inner-span"])
+    assert attrs["metadata.a"] == "1"
+    assert attrs["metadata.b"] == "override"
+    assert attrs["metadata.c"] == "3"
+
+
+def test_cross_process_metadata_kwargs_via_baggage(tracer, collector):
+    """Simulated cross-process: baggage kelet.metadata.* keys picked up by processor."""
+    ctx = otel_context.get_current()
+    ctx = otel_baggage.set_baggage(
+        "kelet.metadata.$kelet_internal", "true", context=ctx
+    )
+    token = otel_context.attach(ctx)
+    try:
+        with tracer.start_as_current_span("downstream"):
+            pass
+    finally:
+        otel_context.detach(token)
+
+    spans = {s.name: s for s in collector.spans}
+    attrs = _attrs(spans["downstream"])
+    assert attrs["metadata.$kelet_internal"] == "true"
