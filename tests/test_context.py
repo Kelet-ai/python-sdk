@@ -2,8 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
+from opentelemetry import baggage as otel_baggage, context as otel_context
+
 from kelet._context import (
+    _metadata_kwargs_var,
     agentic_session,
+    get_metadata_kwargs,
     get_session_id,
     get_user_id,
     get_trace_id,
@@ -81,3 +85,51 @@ def test_agentic_session_dollar_key():
             pass
 
     mock_span.set_attribute.assert_any_call("metadata.$reserved", True)
+
+
+def test_metadata_kwargs_set_and_reset():
+    """_metadata_kwargs_var is set during enter and reset after exit."""
+    assert _metadata_kwargs_var.get() is None
+    with agentic_session(session_id="s", foo="bar"):
+        assert _metadata_kwargs_var.get() == {"foo": "bar"}
+    assert _metadata_kwargs_var.get() is None
+
+
+def test_nested_session_inherits_user_id():
+    """Inner session without user_id inherits outer's user_id."""
+    with agentic_session(session_id="outer", user_id="outer-user"):
+        assert get_user_id() == "outer-user"
+        with agentic_session(session_id="inner"):
+            assert get_user_id() == "outer-user"
+        assert get_user_id() == "outer-user"
+    assert get_user_id() is None
+
+
+def test_nested_session_inherits_project():
+    """Inner session without project inherits outer's project."""
+    from kelet._context import _project_override_var
+
+    with agentic_session(session_id="outer", project="outer-proj"):
+        assert _project_override_var.get() == "outer-proj"
+        with agentic_session(session_id="inner"):
+            assert _project_override_var.get() == "outer-proj"
+        assert _project_override_var.get() == "outer-proj"
+    assert _project_override_var.get() is None
+
+
+def test_nested_session_merges_kwargs():
+    """{**outer, **inner} merge with inner precedence."""
+    with agentic_session(session_id="outer", a="1", b="2"):
+        assert get_metadata_kwargs() == {"a": "1", "b": "2"}
+        with agentic_session(session_id="inner", b="override", c="3"):
+            assert get_metadata_kwargs() == {"a": "1", "b": "override", "c": "3"}
+        assert get_metadata_kwargs() == {"a": "1", "b": "2"}
+    assert get_metadata_kwargs() == {}
+
+
+def test_metadata_kwargs_baggage_set():
+    """Per-key baggage entries are set for kwargs."""
+    with agentic_session(session_id="s", my_key="my_val"):
+        ctx = otel_context.get_current()
+        val = otel_baggage.get_baggage("kelet.metadata.my_key", context=ctx)
+        assert val == "my_val"

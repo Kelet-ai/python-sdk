@@ -240,6 +240,7 @@ class TestAgentSpan:
 
     def test_agent_decorator_sync_exception_cleans_up(self):
         """@agent() decorator cleans up context even when function raises."""
+
         @agent(name="decorator-failing-bot")
         def failing():
             raise RuntimeError("decorator fail")
@@ -330,10 +331,10 @@ class TestAgenticSessionDualStyle:
         inner = next(s for s in spans if s.name == "inner-call")
         assert inner.attributes[SESSION_ID_ATTR] == "sess-kelet"
 
-    def test_nested_session_no_user_id_does_not_leak_outer(self):
-        """Inner session without user_id properly shadows the outer user_id."""
+    def test_nested_session_no_user_id_inherits_outer(self):
+        """Inner session without user_id inherits the outer user_id."""
         with agentic_session(session_id="outer", user_id="alice"):
             assert get_user_id() == "alice"
-            with agentic_session(session_id="inner"):  # no user_id
-                assert get_user_id() is None  # should NOT see "alice"
+            with agentic_session(session_id="inner"):  # no user_id — inherits outer
+                assert get_user_id() == "alice"  # inherited from outer
             assert get_user_id() == "alice"  # outer restored
