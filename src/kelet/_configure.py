@@ -213,6 +213,7 @@ def configure(
     base_url: Optional[str] = None,
     auto_instrument: bool = True,
     additional_span_processors: Optional[Sequence[SpanProcessor]] = None,
+    span_processor: Optional[SpanProcessor] = None,
 ) -> None:
     """Configure Kelet SDK.
 
@@ -227,6 +228,11 @@ def configure(
                         when creating a new TracerProvider.
         additional_span_processors: Extra SpanProcessors to add (e.g., logfire's processor).
                                    Only applies when creating a new TracerProvider.
+        span_processor: Use this SpanProcessor instead of creating the default Kelet one.
+                       Useful for wrapping or filtering the default processor (e.g., for
+                       self-referential monitoring scenarios). When provided, api_key/
+                       base_url are still used for signal() API calls but not for the
+                       span export pipeline.
 
     Raises:
         ValueError: If KELET_API_KEY is not provided.
@@ -251,11 +257,17 @@ def configure(
     )
     set_config(config)
 
-    kelet_processor = create_kelet_processor(
-        api_key=cfg.api_key,
-        project=cfg.project,
-        base_url=cfg.base_url,
-    )
+    if span_processor is not None:
+        # Use provided processor as-is. If it wraps create_kelet_processor() internally,
+        # that inner processor is already tracked in _active_processors for shutdown.
+        # Do NOT append span_processor here — it would cause double-shutdown of the inner.
+        kelet_processor = span_processor
+    else:
+        kelet_processor = create_kelet_processor(
+            api_key=cfg.api_key,
+            project=cfg.project,
+            base_url=cfg.base_url,
+        )
 
     # Check if a TracerProvider already exists (not just the default proxy)
     existing_provider = trace.get_tracer_provider()
