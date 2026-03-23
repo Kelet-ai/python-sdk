@@ -226,7 +226,7 @@ kelet.configure(
 
 ```python
 # Initialize SDK
-kelet.configure(api_key=None, project=None, auto_instrument=True)
+kelet.configure(api_key=None, project=None, auto_instrument=True, span_processor=None)
 
 # Group operations by session for failure correlation
 # Works as context manager (sync + async) and decorator
