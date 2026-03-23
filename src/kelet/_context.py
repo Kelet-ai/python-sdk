@@ -12,8 +12,15 @@ _session_id_var: ContextVar[Optional[str]] = ContextVar(
     "kelet_session_id", default=None
 )
 _user_id_var: ContextVar[Optional[str]] = ContextVar("kelet_user_id", default=None)
-_agent_name_var: ContextVar[Optional[str]] = ContextVar("kelet_agent_name", default=None)
-_project_override_var: ContextVar[Optional[str]] = ContextVar("kelet_project", default=None)
+_agent_name_var: ContextVar[Optional[str]] = ContextVar(
+    "kelet_agent_name", default=None
+)
+_project_override_var: ContextVar[Optional[str]] = ContextVar(
+    "kelet_project", default=None
+)
+_metadata_kwargs_var: ContextVar[Optional[dict[str, object]]] = ContextVar(
+    "kelet_metadata", default=None
+)
 
 # Semantic convention attribute keys (for span attributes)
 SESSION_ID_ATTR = "gen_ai.conversation.id"
@@ -60,8 +67,24 @@ def get_agent_name() -> Optional[str]:
     return _agent_name_var.get()
 
 
+def get_metadata_kwargs() -> dict[str, object]:
+    """Get metadata kwargs from context (set by agentic_session).
+
+    Returns:
+        Metadata kwargs dict if set in context, empty dict otherwise.
+    """
+    return _metadata_kwargs_var.get() or {}
+
+
 class _AgenticSessionContext:
-    def __init__(self, *, session_id: str, user_id: Optional[str] = None, project: Optional[str] = None, **kwargs: object):
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        user_id: Optional[str] = None,
+        project: Optional[str] = None,
+        **kwargs: object,
+    ):
         self._session_id: str = session_id
         self._user_id: Optional[str] = user_id
         self._project: Optional[str] = project
@@ -70,34 +93,57 @@ class _AgenticSessionContext:
         self._baggage_token: Optional[object] = None
 
     def _enter(self) -> None:
+        # Nesting: inherit outer values unless explicitly provided
+        outer_user_id = _user_id_var.get()
+        outer_project = _project_override_var.get()
+        outer_kwargs = _metadata_kwargs_var.get() or {}
+
+        effective_user_id = (
+            self._user_id if self._user_id is not None else outer_user_id
+        )
+        effective_project = (
+            self._project if self._project is not None else outer_project
+        )
+        merged_kwargs = (
+            {**outer_kwargs, **self._kwargs} if outer_kwargs or self._kwargs else None
+        )
+
         self._tokens = [
             _session_id_var.set(self._session_id),
-            _user_id_var.set(self._user_id),
-            _project_override_var.set(self._project),
+            _user_id_var.set(effective_user_id),
+            _project_override_var.set(effective_project),
+            _metadata_kwargs_var.set(merged_kwargs),
         ]
         ctx = otel_context.get_current()
         ctx = baggage.set_baggage("kelet.session_id", self._session_id, context=ctx)
-        # Explicitly set or clear user_id/project baggage so that an inner session
-        # without these values does not propagate the outer session's values downstream
-        # (cross-process scenario). The inLocalSession guard in the processor prevents
-        # in-process bleed-through, but baggage headers are sent to downstream services
-        # regardless — so we must clear stale keys explicitly here.
-        if self._user_id is not None:
-            ctx = baggage.set_baggage("kelet.user_id", self._user_id, context=ctx)
+        if effective_user_id is not None:
+            ctx = baggage.set_baggage("kelet.user_id", effective_user_id, context=ctx)
         else:
             ctx = baggage.remove_baggage("kelet.user_id", context=ctx)
-        if self._project is not None:
-            ctx = baggage.set_baggage("kelet.project", self._project, context=ctx)
+        if effective_project is not None:
+            ctx = baggage.set_baggage("kelet.project", effective_project, context=ctx)
         else:
             ctx = baggage.remove_baggage("kelet.project", context=ctx)
+        # Per-key baggage for metadata kwargs
+        if merged_kwargs:
+            for k, v in merged_kwargs.items():
+                ctx = baggage.set_baggage(
+                    f"kelet.metadata.{k}",
+                    str(v) if not isinstance(v, str) else v,
+                    context=ctx,
+                )
         self._baggage_token = otel_context.attach(ctx)
         span = trace.get_current_span()
         if span and span.is_recording():
             span.set_attribute(SESSION_ID_ATTR, self._session_id)
-            if self._user_id is not None:
-                span.set_attribute(USER_ID_ATTR, self._user_id)
-            for k, v in self._kwargs.items():
-                span.set_attribute(f"metadata.{k}", v if isinstance(v, (str, bool, int, float)) else str(v))
+            if effective_user_id is not None:
+                span.set_attribute(USER_ID_ATTR, effective_user_id)
+            if merged_kwargs:
+                for k, v in merged_kwargs.items():
+                    span.set_attribute(
+                        f"metadata.{k}",
+                        v if isinstance(v, (str, bool, int, float)) else str(v),
+                    )
 
     def _exit(self) -> None:
         if self._baggage_token is not None:
@@ -121,6 +167,7 @@ class _AgenticSessionContext:
 
     def __call__(self, fn):  # type: ignore[override]
         if asyncio.iscoroutinefunction(fn):
+
             @wraps(fn)
             async def async_wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
                 async with _AgenticSessionContext(
@@ -130,6 +177,7 @@ class _AgenticSessionContext:
                     **self._kwargs,
                 ):
                     return await fn(*args, **kwargs)
+
             return async_wrapper
 
         @wraps(fn)
@@ -141,10 +189,17 @@ class _AgenticSessionContext:
                 **self._kwargs,
             ):
                 return fn(*args, **kwargs)
+
         return sync_wrapper
 
 
-def agentic_session(*, session_id: str, user_id: Optional[str] = None, project: Optional[str] = None, **kwargs: object) -> _AgenticSessionContext:
+def agentic_session(
+    *,
+    session_id: str,
+    user_id: Optional[str] = None,
+    project: Optional[str] = None,
+    **kwargs: object,
+) -> _AgenticSessionContext:
     """Context manager / decorator that sets agentic session context.
 
     Supports:
@@ -159,7 +214,9 @@ def agentic_session(*, session_id: str, user_id: Optional[str] = None, project: 
         project: Optional project override (overrides global kelet.project for this session)
         **kwargs: Additional metadata stamped as metadata.{key} span attributes
     """
-    return _AgenticSessionContext(session_id=session_id, user_id=user_id, project=project, **kwargs)
+    return _AgenticSessionContext(
+        session_id=session_id, user_id=user_id, project=project, **kwargs
+    )
 
 
 class _AgentContext:
@@ -171,7 +228,10 @@ class _AgentContext:
 
     def _start(self) -> None:
         tracer = trace.get_tracer("kelet")
-        attrs: dict = {"gen_ai.operation.name": "invoke_agent", AGENT_NAME_ATTR: self._name}
+        attrs: dict = {
+            "gen_ai.operation.name": "invoke_agent",
+            AGENT_NAME_ATTR: self._name,
+        }
         if (sid := _session_id_var.get()) is not None:
             attrs[SESSION_ID_ATTR] = sid
         if (uid := _user_id_var.get()) is not None:
@@ -209,16 +269,19 @@ class _AgentContext:
 
     def __call__(self, fn):  # type: ignore[override]
         if asyncio.iscoroutinefunction(fn):
+
             @wraps(fn)
             async def async_wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
                 async with _AgentContext(name=self._name):
                     return await fn(*args, **kwargs)
+
             return async_wrapper
 
         @wraps(fn)
         def sync_wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
             with _AgentContext(name=self._name):
                 return fn(*args, **kwargs)
+
         return sync_wrapper
 
 

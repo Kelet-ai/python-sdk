@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-03-23)
+
+### Features
+
+- **KEL-343**: Add span_processor param to configure()
+  ([#5](https://github.com/Kelet-ai/python-sdk/pull/5),
+  [`e6f0467`](https://github.com/Kelet-ai/python-sdk/commit/e6f04678a106b192f03c56adfe79e715b0da8ea7))
+
+
+## v1.2.2 (2026-03-23)
+
+### Bug Fixes
+
+- **KEL-342**: Propagate metadata kwargs to child spans via SpanProcessor
+  ([`5c6430d`](https://github.com/Kelet-ai/python-sdk/commit/5c6430d36e56a5fd47588cb3a66e35f7f80c0db8))
+
+
+## v1.2.1 (2026-03-21)
+
+### Bug Fixes
+
+- Upgrade deps
+  ([`2497619`](https://github.com/Kelet-ai/python-sdk/commit/249761946683f931d1d2243d1093daf0d800c918))
+
+
 ## v1.2.0 (2026-03-21)
 
 ### Bug Fixes

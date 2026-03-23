@@ -226,11 +226,11 @@ kelet.configure(
 
 ```python
 # Initialize SDK
-kelet.configure(api_key=None, project=None, auto_instrument=True)
+kelet.configure(api_key=None, project=None, auto_instrument=True, span_processor=None)
 
 # Group operations by session for failure correlation
 # Works as context manager (sync + async) and decorator
-with kelet.agentic_session(session_id="session-id", user_id="user-id", project="project-override"):  # project optional
+with kelet.agentic_session(session_id="session-id", user_id="user-id", project="project-override", env="production"):  # user_id, project, **kwargs optional
     result = await agent.run(...)
 
 # Wrap a named agent invocation in an explicit OTEL span
@@ -249,7 +249,8 @@ await kelet.signal(
 session_id = kelet.get_session_id()
 trace_id = kelet.get_trace_id()
 user_id = kelet.get_user_id()
-agent_name = kelet.get_agent_name()  # Set by kelet.agent()
+agent_name = kelet.get_agent_name()      # Set by kelet.agent()
+metadata = kelet.get_metadata_kwargs()   # Set by agentic_session(**kwargs)
 
 # Manual shutdown (automatic on exit)
 kelet.shutdown()
