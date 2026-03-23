@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.2 (2026-03-23)
+
+### Bug Fixes
+
+- **KEL-342**: Propagate metadata kwargs to child spans via SpanProcessor
+  ([`5c6430d`](https://github.com/Kelet-ai/python-sdk/commit/5c6430d36e56a5fd47588cb3a66e35f7f80c0db8))
+
+
 ## v1.2.1 (2026-03-21)
 
 ### Bug Fixes
