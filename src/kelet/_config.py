@@ -7,6 +7,11 @@ from typing import Optional
 import httpx
 from pydantic import BaseModel, PrivateAttr
 
+_PROJECT_REQUIRED_ERROR = (
+    "KELET_PROJECT required. Set the KELET_PROJECT env var or pass project= to configure().\n"
+    "Create a project at https://console.kelet.ai"
+)
+
 
 class KeletConfig(BaseModel):
     """Internal configuration for Kelet SDK."""
@@ -68,10 +73,13 @@ def get_config() -> KeletConfig:
 
         base_url = os.environ.get("KELET_API_URL", "https://api.kelet.ai")
         base_url = base_url.removesuffix("/api").rstrip("/")
+        project_val = os.environ.get("KELET_PROJECT")
+        if not project_val:
+            raise ValueError(_PROJECT_REQUIRED_ERROR)
         _config = KeletConfig(
             api_key=api_key,
             base_url=base_url,
-            project=os.environ.get("KELET_PROJECT", "default"),
+            project=project_val,
         )
         return _config
 
@@ -81,6 +89,13 @@ def set_config(config: KeletConfig) -> None:
     global _config
     with _config_lock:
         _config = config
+
+
+def reset_config() -> None:
+    """Reset configuration state. For testing only."""
+    global _config
+    with _config_lock:
+        _config = None
 
 
 def is_configured() -> bool:
