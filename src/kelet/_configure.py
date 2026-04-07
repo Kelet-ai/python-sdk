@@ -15,7 +15,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import ProxyTracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from ._config import KeletConfig, set_config
+from ._config import KeletConfig, set_config, _PROJECT_REQUIRED_ERROR
 from ._context import (
     _session_id_var,
     _user_id_var,
@@ -48,7 +48,7 @@ def _resolve_config(
 
     Args:
         api_key: API key (default: KELET_API_KEY env var)
-        project: Project name (default: KELET_PROJECT env var or "default")
+        project: Project name. Reads KELET_PROJECT env var if not passed. Required.
         base_url: API base URL (default: KELET_API_URL env var or "https://api.kelet.ai")
 
     Returns:
@@ -56,6 +56,7 @@ def _resolve_config(
 
     Raises:
         ValueError: If KELET_API_KEY is not provided.
+        ValueError: If KELET_PROJECT is not provided.
     """
     resolved_api_key = api_key or os.environ.get("KELET_API_KEY")
     if not resolved_api_key:
@@ -65,10 +66,14 @@ def _resolve_config(
     base_url = base_url or os.environ.get("KELET_API_URL", "https://api.kelet.ai")
     base_url = base_url.rstrip("/").removesuffix("/api")
 
+    _project = project or os.environ.get("KELET_PROJECT")
+    if not _project:
+        raise ValueError(_PROJECT_REQUIRED_ERROR)
+
     return _ResolvedConfig(
         api_key=resolved_api_key,
         base_url=base_url,
-        project=project or os.environ.get("KELET_PROJECT", "default"),
+        project=_project,
     )
 
 
@@ -176,7 +181,7 @@ def create_kelet_processor(
 
     Args:
         api_key: API key (default: KELET_API_KEY env var)
-        project: Project name (default: KELET_PROJECT env var or "default")
+        project: Project name. Reads KELET_PROJECT env var if not passed. Required.
         base_url: API base URL (default: KELET_API_URL env var or "https://api.kelet.ai")
 
     Returns:
@@ -257,7 +262,7 @@ def configure(
 
     Args:
         api_key: API key (default: KELET_API_KEY env var)
-        project: Project name (default: KELET_PROJECT env var or "default")
+        project: Project name. Reads KELET_PROJECT env var if not passed. Required.
         base_url: API base URL (default: KELET_API_URL env var or "https://api.kelet.ai")
         auto_instrument: Auto-instrument pydantic-ai (default: True). Only applies
                         when creating a new TracerProvider.

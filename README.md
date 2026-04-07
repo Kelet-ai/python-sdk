@@ -42,7 +42,7 @@ pip install kelet
 Set your API key:
 ```bash
 export KELET_API_KEY=your_api_key
-export KELET_PROJECT=production  # Optional: organize traces by environment
+export KELET_PROJECT=production  # Required — create a project at console.kelet.ai
 ```
 
 Or configure in code:
@@ -99,7 +99,7 @@ If your application hosts multiple independent root agent systems that belong to
 ```python
 import kelet
 
-kelet.configure(api_key="your_api_key", project="default-project")
+kelet.configure(api_key="your_api_key", project="customer_support")
 
 # Spans inside this session are attributed to "customer_support_prod"
 async with kelet.agentic_session(session_id="sess-123", user_id="user-1", project="customer_support_prod"):
@@ -206,7 +206,7 @@ Set via environment variables:
 
 ```bash
 export KELET_API_KEY=your_api_key    # Required
-export KELET_PROJECT=production      # Optional, defaults to "default"
+export KELET_PROJECT=production      # Required — create a project at console.kelet.ai
 export KELET_API_URL=https://...     # Optional, defaults to api.kelet.ai
 ```
 
@@ -230,7 +230,7 @@ kelet.configure(api_key=None, project=None, auto_instrument=True, span_processor
 
 # Group operations by session for failure correlation
 # Works as context manager (sync + async) and decorator
-with kelet.agentic_session(session_id="session-id", user_id="user-id", project="project-override", env="production"):  # user_id, project, **kwargs optional
+with kelet.agentic_session(session_id="session-id", user_id="user-id", project="project-override", env="production"):  # user_id optional; project overrides global config
     result = await agent.run(...)
 
 # Wrap a named agent invocation in an explicit OTEL span
