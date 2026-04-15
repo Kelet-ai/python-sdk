@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.3.1 (2026-04-07)
+
+### Bug Fixes
+
+- **KEL-374**: Remove default project fallback, fail-fast on missing project
+  ([#6](https://github.com/Kelet-ai/python-sdk/pull/6),
+  [`92a7b09`](https://github.com/Kelet-ai/python-sdk/commit/92a7b095fe8cbfd65eee170e414e00c0d515512e))
+
+
 ## v1.3.0 (2026-03-23)
 
 ### Features
