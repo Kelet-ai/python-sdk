@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-04-16)
+
+### Features
+
+- Add LiteLLM and Google ADK auto-instrumentation; signal best-effort by default
+  ([`10b08ce`](https://github.com/Kelet-ai/python-sdk/commit/10b08ce99ad05930c38b0f90bfd46c97f655eac2))
+
+
 ## v1.3.1 (2026-04-07)
 
 ### Bug Fixes
