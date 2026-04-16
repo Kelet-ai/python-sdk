@@ -81,3 +81,30 @@ def test_configure_without_custom_processor_calls_create(monkeypatch):
     )
 
     assert create_call_count == 1
+
+
+def test_configure_auto_instruments_with_existing_provider(monkeypatch):
+    """configure(auto_instrument=True) still instruments frameworks when a provider already exists."""
+    mock = _MockProcessor()
+    auto_instrument_call_count = 0
+
+    def _spy_create(**kwargs):
+        return mock
+
+    def _spy_auto_instrument():
+        nonlocal auto_instrument_call_count
+        auto_instrument_call_count += 1
+
+    monkeypatch.setattr("kelet._configure.create_kelet_processor", _spy_create)
+    monkeypatch.setattr(
+        "kelet._configure._auto_instrument_frameworks",
+        _spy_auto_instrument,
+    )
+
+    kelet.configure(
+        api_key="test-key",
+        project="test-project",
+        auto_instrument=True,
+    )
+
+    assert auto_instrument_call_count == 1

@@ -31,6 +31,7 @@ async def signal(
     confidence: Optional[float] = None,
     metadata: Optional[dict[str, Any]] = None,
     timestamp: Optional[datetime] = None,
+    raise_on_failure: bool = False,
 ) -> None:
     """Submit a signal for an AI session.
 
@@ -50,11 +51,18 @@ async def signal(
         confidence: Confidence level (0.0 to 1.0)
         metadata: Additional metadata
         timestamp: Event timestamp
+        raise_on_failure: Re-raise request/transport failures after retries.
+                          Defaults to False, which logs and returns.
 
     Raises:
         ValueError: If neither session_id nor trace_id can be determined
         ValueError: If score or confidence is outside 0-1 range
-        httpx.HTTPStatusError: If the request fails after retries
+        httpx.HTTPStatusError: If an HTTP error occurs after retries and
+                               raise_on_failure is True
+        httpx.ConnectError: If a connection error occurs after retries and
+                            raise_on_failure is True
+        httpx.TimeoutException: If a timeout occurs after retries and
+                                raise_on_failure is True
 
     Example:
         with kelet.agentic_session(session_id="session-123"):
@@ -109,7 +117,9 @@ async def signal(
 
     # Retry with exponential backoff
     last_error: Optional[Exception] = None
+    attempt_count = 0
     for attempt in range(_MAX_RETRIES):
+        attempt_count = attempt + 1
         try:
             response = await client.post(
                 url, json=payload.model_dump(exclude_none=True)
@@ -118,7 +128,10 @@ async def signal(
             return
         except httpx.HTTPStatusError as e:
             if e.response.status_code not in _RETRYABLE_STATUS_CODES:
-                raise
+                if raise_on_failure:
+                    raise
+                last_error = e
+                break
             last_error = e
             if attempt < _MAX_RETRIES - 1:
                 wait_time = _RETRY_BACKOFF_BASE * (2**attempt)
@@ -139,4 +152,10 @@ async def signal(
 
     # All retries exhausted
     if last_error:
-        raise last_error
+        logger.warning(
+            "Signal request failed after %s attempt(s): %s",
+            attempt_count,
+            last_error,
+        )
+        if raise_on_failure:
+            raise last_error

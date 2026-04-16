@@ -264,8 +264,9 @@ def configure(
         api_key: API key (default: KELET_API_KEY env var)
         project: Project name. Reads KELET_PROJECT env var if not passed. Required.
         base_url: API base URL (default: KELET_API_URL env var or "https://api.kelet.ai")
-        auto_instrument: Auto-instrument pydantic-ai (default: True). Only applies
-                        when creating a new TracerProvider.
+        auto_instrument: Auto-instrument supported frameworks (default: True).
+                        Works whether Kelet creates a new TracerProvider or attaches
+                        to an existing one.
         additional_span_processors: Extra SpanProcessors to add (e.g., logfire's processor).
                                    Only applies when creating a new TracerProvider.
         span_processor: Use this SpanProcessor instead of creating the default Kelet one.
@@ -352,9 +353,8 @@ def configure(
 
         trace.set_tracer_provider(provider)
 
-        # Auto-instrument frameworks (only when creating our own provider)
-        if auto_instrument:
-            _auto_instrument_frameworks()
+    if auto_instrument:
+        _auto_instrument_frameworks()
 
 
 def _auto_instrument_frameworks() -> None:
@@ -365,6 +365,8 @@ def _auto_instrument_frameworks() -> None:
     - Anthropic (openinference)
     - OpenAI (openinference)
     - LangChain (openinference, also covers LangGraph)
+    - LiteLLM (native OTEL callback)
+    - Google ADK (OpenInference preferred, native OTEL fallback)
     """
     try:
         from pydantic_ai import Agent  # pyright: ignore [reportMissingImports]
@@ -396,3 +398,56 @@ def _auto_instrument_frameworks() -> None:
         LangChainInstrumentor().instrument()
     except ImportError:
         pass
+
+    # LiteLLM — native OTEL support, auto-discovers global TracerProvider
+    try:
+        import litellm  # pyright: ignore[reportMissingImports]
+        from litellm.integrations.opentelemetry import (  # pyright: ignore[reportMissingImports]
+            OpenTelemetry as _LiteLLMOtel,
+        )
+
+        # Prefer per-request LiteLLM spans by default so repeated calls within the
+        # same parent OTEL span do not overwrite each other's request attributes.
+        os.environ.setdefault("USE_OTEL_LITELLM_REQUEST_SPAN", "true")
+
+        existing = (
+            list(litellm.callbacks)
+            if isinstance(getattr(litellm, "callbacks", None), list)
+            else []
+        )
+        active_callbacks = []
+        for attr_name in (
+            "callbacks",
+            "success_callback",
+            "failure_callback",
+            "_async_success_callback",
+            "_async_failure_callback",
+            "service_callback",
+        ):
+            callbacks = getattr(litellm, attr_name, None)
+            if isinstance(callbacks, list):
+                active_callbacks.extend(callbacks)
+
+        already = any(
+            cb == "otel" or isinstance(cb, _LiteLLMOtel) for cb in active_callbacks
+        )
+        if not already:
+            litellm.callbacks = existing + ["otel"]
+    except ImportError:
+        pass
+
+    # Google ADK — prefer OpenInference instrumentation for stable semconv,
+    # fall back to ADK's native OTEL spans if the instrumentor isn't installed.
+    try:
+        from openinference.instrumentation.google_adk import (  # pyright: ignore[reportMissingImports]
+            GoogleADKInstrumentor,
+        )
+
+        GoogleADKInstrumentor().instrument(
+            tracer_provider=trace.get_tracer_provider()
+        )
+    except ImportError:
+        try:
+            import google.adk.telemetry  # pyright: ignore[reportMissingImports]  # noqa: F401
+        except ImportError:
+            pass

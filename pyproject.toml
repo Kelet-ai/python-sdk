@@ -13,16 +13,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pydantic-ai = ["pydantic-ai>=0.1.0"]
-# Keep pandas as optional for backward compatibility with examples
-pandas = ["pandas>=2.2.3"]
 anthropic = ["openinference-instrumentation-anthropic"]
 openai = ["openinference-instrumentation-openai"]
 langchain = ["openinference-instrumentation-langchain"]
+google-adk = ["openinference-instrumentation-google-adk"]
 all = [
     "openinference-instrumentation-anthropic",
     "openinference-instrumentation-openai",
     "openinference-instrumentation-langchain",
+    "openinference-instrumentation-google-adk",
 ]
 
 [build-system]

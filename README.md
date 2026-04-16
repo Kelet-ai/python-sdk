@@ -58,7 +58,7 @@ kelet.configure(
 ```python
 import kelet
 
-kelet.configure()  # Auto-instruments pydantic-ai, Anthropic SDK, OpenAI SDK, LangChain/LangGraph
+kelet.configure()  # Auto-instruments pydantic-ai, Anthropic, OpenAI, LangChain/LangGraph, and LiteLLM; captures Google ADK OTEL spans
 
 # Your agent code works as-is - instrumentation is automatic
 result = await agent.run("Book a flight to NYC")
@@ -68,6 +68,8 @@ await kelet.signal(
     kind=kelet.SignalKind.FEEDBACK,
     source=kelet.SignalSource.HUMAN,
     score=0.0,  # User unhappy? Kelet analyzes why.
+    # Best-effort by default: request failures warn and return.
+    # Pass raise_on_failure=True if you want to surface them.
 )
 ```
 
@@ -143,16 +145,18 @@ async with kelet.agentic_session(session_id="sess-123"):
 
 ### Auto-Instrumentation
 
-`kelet.configure()` automatically detects and instruments supported libraries — no extra code needed:
+`kelet.configure()` automatically detects supported libraries and configures available integrations — no extra code needed. This works whether Kelet creates the global TracerProvider or attaches to an existing one.
 
-| Library | Install extra |
-|---------|---------------|
-| **Pydantic AI** | _(included)_ |
-| **Anthropic SDK** | `pip install kelet[anthropic]` |
-| **OpenAI SDK** | `pip install kelet[openai]` |
-| **LangChain / LangGraph** | `pip install kelet[langchain]` |
+| Library | Install extra | How it works |
+|---------|---------------|--------------|
+| **Pydantic AI** | _(included)_ | Instrumented automatically |
+| **Anthropic SDK** | `pip install kelet[anthropic]` | OpenInference instrumentation |
+| **OpenAI SDK** | `pip install kelet[openai]` | OpenInference instrumentation |
+| **LangChain / LangGraph** | `pip install kelet[langchain]` | OpenInference instrumentation |
+| **LiteLLM** | `pip install litellm` | Registers LiteLLM's native OTEL callback automatically and prefers per-request spans |
+| **Google ADK** | `pip install google-adk kelet[google-adk]` | Prefers OpenInference instrumentation; falls back to native ADK OTEL spans |
 
-All four at once: `pip install kelet[all]`
+Install all OpenInference extras at once: `pip install kelet[all]`
 
 If a library isn't installed, Kelet silently skips it — no errors.
 
@@ -172,7 +176,7 @@ import kelet
 logfire.configure()
 logfire.instrument_pydantic_ai()
 
-kelet.configure()  # Adds Kelet's processor to your existing setup
+kelet.configure()  # Adds Kelet's processor and auto-instrumentation to your existing OTEL setup
 ```
 
 ---
@@ -183,7 +187,7 @@ Kelet is built on [OpenTelemetry](https://opentelemetry.io/) and supports multip
 
 | Semantic Convention | Supported Frameworks |
 |---------------------|----------------------|
-| [GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) | Pydantic AI, LiteLLM, Langfuse SDK |
+| [GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) | Pydantic AI, LiteLLM, Google ADK, Langfuse SDK |
 | Vercel AI SDK | Next.js, Vercel AI |
 | OpenInference | Arize Phoenix |
 | OpenLLMetry / Traceloop | LangChain, LangGraph, LlamaIndex, OpenAI SDK, Anthropic SDK |
@@ -216,7 +220,7 @@ Or pass directly to `configure()`:
 kelet.configure(
     api_key="your_api_key",
     project="production",
-    auto_instrument=True  # Auto-instruments pydantic-ai, Anthropic, OpenAI, LangChain/LangGraph
+    auto_instrument=True  # Auto-instruments pydantic-ai, Anthropic, OpenAI, LangChain/LangGraph, and LiteLLM; captures Google ADK OTEL spans
 )
 ```
 
@@ -243,6 +247,7 @@ await kelet.signal(
     kind=kelet.SignalKind.FEEDBACK,       # feedback | edit | event | metric | arbitrary
     source=kelet.SignalSource.HUMAN,      # human | label | synthetic
     score=0.0,                            # 0.0 to 1.0
+    # raise_on_failure=True,             # Optional: re-raise request failures
 )
 
 # Access current context
@@ -263,7 +268,8 @@ kelet.shutdown()
 The SDK never disrupts your application:
 
 - **Async**: Telemetry exports in background, zero blocking
-- **Fail-safe**: Network errors handled silently, no exceptions raised
+- **Fail-safe**: Telemetry export and `signal()` delivery are best-effort by default
+- **Visible**: Delivery failures warn in logs; pass `raise_on_failure=True` to `signal()` to surface them
 - **Graceful**: If Kelet is down, your agent keeps running
 - **Auto-flush**: Spans exported automatically on process exit
 
