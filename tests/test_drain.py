@@ -136,9 +136,9 @@ async def test_agentic_session_async_exit_invokes_drain(fast_drain, monkeypatch)
     calls: list[str] = []
     real_drain = _context._drain_background_logging_tasks
 
-    async def spy_drain() -> None:
+    async def spy_drain(baseline=None) -> None:
         calls.append("drain")
-        await real_drain()
+        await real_drain(baseline=baseline)
 
     monkeypatch.setattr(_context, "_drain_background_logging_tasks", spy_drain)
 
@@ -154,7 +154,7 @@ async def test_agentic_session_async_exit_invokes_drain(fast_drain, monkeypatch)
 async def test_aexit_swallows_drain_exceptions(fast_drain, monkeypatch, caplog):
     """A broken drain must never break user control flow."""
 
-    async def explode() -> None:
+    async def explode(baseline=None) -> None:
         raise RuntimeError("simulated drain failure")
 
     monkeypatch.setattr(_context, "_drain_background_logging_tasks", explode)
@@ -166,3 +166,55 @@ async def test_aexit_swallows_drain_exceptions(fast_drain, monkeypatch, caplog):
     assert any(
         "drain_background_logging_tasks failed" in rec.message for rec in caplog.records
     ), "expected debug log when drain raises"
+
+
+@pytest.mark.asyncio
+async def test_drain_ignores_tasks_that_predate_session(fast_drain):
+    """Unrelated user-owned tasks that existed before __aenter__ must not block aexit.
+
+    Regression guard for baz-reviewer feedback: a naive ``asyncio.all_tasks()``
+    drain would wait the full timeout on any app with a long-lived websocket/
+    scheduler/background worker. The baseline snapshot exempts them.
+    """
+    never_done = asyncio.Event()
+
+    async def user_background() -> None:
+        await never_done.wait()
+
+    # This task exists BEFORE the session starts — it must not block aexit.
+    user_task = asyncio.create_task(user_background())
+    try:
+        start = time.monotonic()
+        async with agentic_session(session_id="sess-predate"):
+            pass
+        elapsed = time.monotonic() - start
+        # Would be ~1.0s (the fixture's timeout) if baseline exemption is broken.
+        assert elapsed < 0.2, (
+            f"aexit took {elapsed:.3f}s with a pre-existing user task; "
+            "baseline snapshot exemption may be broken"
+        )
+    finally:
+        never_done.set()
+        await user_task
+
+
+@pytest.mark.asyncio
+async def test_drain_waits_for_tasks_created_inside_session(fast_drain):
+    """Tasks spawned DURING the session body must still gate aexit.
+
+    This is the LiteLLM-callback case: the user's completion call creates
+    fire-and-forget callback tasks whose spans we need to flush. They were
+    not in the aenter baseline, so drain must wait for them.
+    """
+    callback_ran = asyncio.Event()
+
+    async def late_callback() -> None:
+        await asyncio.sleep(0.05)
+        callback_ran.set()
+
+    async with agentic_session(session_id="sess-in-session"):
+        asyncio.create_task(late_callback())  # spawned AFTER aenter snapshot
+
+    assert callback_ran.is_set(), (
+        "drain returned before a task spawned inside the session body completed"
+    )

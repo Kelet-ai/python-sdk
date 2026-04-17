@@ -57,7 +57,9 @@ def _litellm_worker_loop_task() -> Optional[asyncio.Task]:
     return task
 
 
-async def _drain_background_logging_tasks() -> None:
+async def _drain_background_logging_tasks(
+    baseline: Optional[set[asyncio.Task]] = None,
+) -> None:
     """Drain background SDK-instrumentation callback tasks before aexit returns.
 
     Some LLM SDK integrations (notably LiteLLM) dispatch OTEL callbacks via
@@ -76,19 +78,27 @@ async def _drain_background_logging_tasks() -> None:
     task graph is idle for a short quiet period, or a 5s hard timeout —
     whichever comes first. No hang.
 
-    Strategy: poll ``asyncio.all_tasks()`` minus (our own task, the LiteLLM
-    long-lived worker-loop task if present). When that set is empty for
-    ``_DRAIN_QUIET_ITERATIONS`` consecutive polls, we're done.
+    Strategy: only wait for tasks that appeared on the loop AFTER the
+    session's ``__aenter__`` (the ``baseline`` snapshot). Unrelated
+    user-owned background tasks — websockets, schedulers, long-lived
+    workers — existed before the session and stay exempt, so they don't
+    extend session exit. On top of that we always exempt our own task and
+    the LiteLLM long-lived worker-loop task (which may have been spawned
+    lazily inside the session on first use).
+
+    ``baseline=None`` falls back to treating every task as in-scope; used
+    by the standalone tests that exercise the drain without a session.
     """
     current_task = asyncio.current_task()
     loop = asyncio.get_running_loop()
     deadline = loop.time() + _DRAIN_TIMEOUT_SECONDS
     quiet = 0
+    baseline = baseline if baseline is not None else set()
 
     while loop.time() < deadline:
         await asyncio.sleep(_DRAIN_POLL_INTERVAL)
 
-        exempt = {current_task, _litellm_worker_loop_task()}
+        exempt = {current_task, _litellm_worker_loop_task()} | baseline
         other_pending = any(
             t not in exempt and not t.done() for t in asyncio.all_tasks(loop=loop)
         )
@@ -192,6 +202,7 @@ class _AgenticSessionContext:
         self._kwargs: dict[str, object] = kwargs
         self._tokens: list = []
         self._baggage_token: Optional[object] = None
+        self._aenter_tasks: Optional[set[asyncio.Task]] = None
 
     def _enter(self) -> None:
         # Nesting: inherit outer values unless explicitly provided
@@ -261,6 +272,14 @@ class _AgenticSessionContext:
 
     async def __aenter__(self) -> "_AgenticSessionContext":
         self._enter()
+        # Snapshot live tasks so the aexit-drain only waits for tasks
+        # that appeared DURING the session body. Pre-existing user tasks
+        # (websockets, schedulers, long-lived workers) are exempt from
+        # the drain window — they should not extend session exit.
+        try:
+            self._aenter_tasks = set(asyncio.all_tasks())
+        except RuntimeError:
+            self._aenter_tasks = None
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -270,7 +289,7 @@ class _AgenticSessionContext:
         # single-completion scenarios from losing their request spans when
         # asyncio.run() tears down the loop.
         try:
-            await _drain_background_logging_tasks()
+            await _drain_background_logging_tasks(baseline=self._aenter_tasks)
         except Exception:
             _logger.debug("drain_background_logging_tasks failed", exc_info=True)
         self._exit()
