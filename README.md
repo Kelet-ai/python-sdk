@@ -160,6 +160,8 @@ Install all OpenInference extras at once: `pip install kelet[all]`
 
 If a library isn't installed, Kelet silently skips it — no errors.
 
+> **Note on bare LiteLLM:** Due to a LiteLLM limitation, session and agent context are **not propagated natively** into LiteLLM spans. If you call LiteLLM directly (not through another instrumented framework), wrap your calls with [`kelet.agentic_session(...)`](#manual-session-grouping-optional) and/or [`kelet.agent(...)`](#agent-spans-optional) to group them. When LiteLLM is used inside another supported framework — for example Google ADK, which commonly uses LiteLLM under the hood — the parent span provides session/agent context and no extra wrapping is needed.
+
 ### Easy Feedback UI for React
 
 Building a React frontend? Use the [Kelet Feedback UI](https://github.com/kelet-ai/feedback-ui) component for instant implicit and explicit feedback collection.
