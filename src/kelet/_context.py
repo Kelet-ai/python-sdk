@@ -163,6 +163,17 @@ class _AgenticSessionContext:
         return self
 
     async def __aexit__(self, *exc: object) -> None:
+        # Drain any background LLM-callback queues (e.g. LiteLLM's
+        # GLOBAL_LOGGING_WORKER) while we still have a live event loop.
+        # Doing this in aexit — rather than atexit — is what keeps
+        # single-completion scenarios from losing their request spans when
+        # asyncio.run() tears down the loop.
+        try:
+            from ._configure import _drain_background_logging_tasks
+
+            await _drain_background_logging_tasks()
+        except Exception:
+            pass  # Never break the user's control flow over log draining
         self._exit()
 
     def __call__(self, fn):  # type: ignore[override]
