@@ -399,15 +399,40 @@ def _auto_instrument_frameworks() -> None:
     except ImportError:
         pass
 
-    # LiteLLM — via OpenInference instrumentor (wraps completion/acompletion
-    # inline with start_as_current_span, so the span is created and ended
-    # synchronously with the caller — no GLOBAL_LOGGING_WORKER queue race).
+    # LiteLLM — native OTEL support, auto-discovers global TracerProvider
     try:
-        from openinference.instrumentation.litellm import (  # pyright: ignore[reportMissingImports]
-            LiteLLMInstrumentor,
+        import litellm  # pyright: ignore[reportMissingImports]
+        from litellm.integrations.opentelemetry import (  # pyright: ignore[reportMissingImports]
+            OpenTelemetry as _LiteLLMOtel,
         )
 
-        LiteLLMInstrumentor().instrument(tracer_provider=trace.get_tracer_provider())
+        # Prefer per-request LiteLLM spans by default so repeated calls within the
+        # same parent OTEL span do not overwrite each other's request attributes.
+        os.environ.setdefault("USE_OTEL_LITELLM_REQUEST_SPAN", "true")
+
+        existing = (
+            list(litellm.callbacks)
+            if isinstance(getattr(litellm, "callbacks", None), list)
+            else []
+        )
+        active_callbacks = []
+        for attr_name in (
+            "callbacks",
+            "success_callback",
+            "failure_callback",
+            "_async_success_callback",
+            "_async_failure_callback",
+            "service_callback",
+        ):
+            callbacks = getattr(litellm, attr_name, None)
+            if isinstance(callbacks, list):
+                active_callbacks.extend(callbacks)
+
+        already = any(
+            cb == "otel" or isinstance(cb, _LiteLLMOtel) for cb in active_callbacks
+        )
+        if not already:
+            litellm.callbacks = existing + ["otel"]
     except ImportError:
         pass
 
