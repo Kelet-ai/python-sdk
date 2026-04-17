@@ -443,9 +443,7 @@ def _auto_instrument_frameworks() -> None:
             GoogleADKInstrumentor,
         )
 
-        GoogleADKInstrumentor().instrument(
-            tracer_provider=trace.get_tracer_provider()
-        )
+        GoogleADKInstrumentor().instrument(tracer_provider=trace.get_tracer_provider())
     except ImportError:
         try:
             import google.adk.telemetry  # pyright: ignore[reportMissingImports]  # noqa: F401
