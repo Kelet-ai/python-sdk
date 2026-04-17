@@ -289,10 +289,14 @@ class _AgenticSessionContext:
         # single-completion scenarios from losing their request spans when
         # asyncio.run() tears down the loop.
         try:
-            await _drain_background_logging_tasks(baseline=self._aenter_tasks)
-        except Exception:
-            _logger.debug("drain_background_logging_tasks failed", exc_info=True)
-        self._exit()
+            try:
+                await _drain_background_logging_tasks(baseline=self._aenter_tasks)
+            except Exception:
+                # Swallow drain errors so session cleanup still runs; re-raise
+                # BaseException (e.g. CancelledError) after _exit() via finally.
+                _logger.debug("drain_background_logging_tasks failed", exc_info=True)
+        finally:
+            self._exit()
 
     def __call__(self, fn):  # type: ignore[override]
         if asyncio.iscoroutinefunction(fn):

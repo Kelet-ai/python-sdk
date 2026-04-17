@@ -166,6 +166,34 @@ async def test_aexit_swallows_drain_exceptions(fast_drain, monkeypatch, caplog):
     assert any(
         "drain_background_logging_tasks failed" in rec.message for rec in caplog.records
     ), "expected debug log when drain raises"
+    # Cleanup must run even when the drain blew up — session ContextVar
+    # must be reset so the next call is not polluted with "sess-explode".
+    assert _context._session_id_var.get() is None, (
+        "session context leaked after drain raised"
+    )
+
+
+@pytest.mark.asyncio
+async def test_aexit_runs_exit_on_cancellation(fast_drain, monkeypatch):
+    """CancelledError during drain must not skip _exit cleanup.
+
+    Regression guard for baz-reviewer feedback: without a try/finally,
+    BaseException in the drain would leave ContextVars and baggage
+    attached, poisoning subsequent sessions on the same loop.
+    """
+
+    async def cancelled_drain(baseline=None) -> None:
+        raise asyncio.CancelledError("simulated cancel during drain")
+
+    monkeypatch.setattr(_context, "_drain_background_logging_tasks", cancelled_drain)
+
+    with pytest.raises(asyncio.CancelledError):
+        async with agentic_session(session_id="sess-cancelled"):
+            pass
+
+    assert _context._session_id_var.get() is None, (
+        "session ContextVar must be reset even when drain is cancelled"
+    )
 
 
 @pytest.mark.asyncio
