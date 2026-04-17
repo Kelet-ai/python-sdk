@@ -16,11 +16,13 @@ dependencies = [
 anthropic = ["openinference-instrumentation-anthropic"]
 openai = ["openinference-instrumentation-openai"]
 langchain = ["openinference-instrumentation-langchain"]
+litellm = ["openinference-instrumentation-litellm"]
 google-adk = ["openinference-instrumentation-google-adk"]
 all = [
     "openinference-instrumentation-anthropic",
     "openinference-instrumentation-openai",
     "openinference-instrumentation-langchain",
+    "openinference-instrumentation-litellm",
     "openinference-instrumentation-google-adk",
 ]
 
