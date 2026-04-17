@@ -155,94 +155,6 @@ class _KeletSpanProcessor(SpanProcessor):
         return self._wrapped.force_flush(timeout_millis)
 
 
-async def _drain_background_logging_tasks() -> None:
-    """Drain any background SDK-instrumentation callback tasks.
-
-    Several LLM SDK integrations (notably LiteLLM) dispatch success/failure
-    callbacks through ``asyncio.create_task(...)`` and through an internal
-    background-queue worker (``GLOBAL_LOGGING_WORKER`` in LiteLLM's case).
-    The OTEL spans that represent the actual request (``litellm_request``,
-    ``raw_gen_ai_request``, …) are produced inside those callbacks.
-
-    When a scenario runs few completions (or a single one, like
-    extended-thinking) the callback task can still be pending when the
-    user's async entry point returns — at which point ``asyncio.run()``
-    cancels it during loop teardown and those spans are never created.
-
-    Call this from an async context (e.g. ``async with agentic_session``'s
-    aexit) BEFORE ``kelet.shutdown()`` runs, so the callback coroutines get
-    a turn on the loop and produce their spans, which the BatchSpanProcessor
-    can then flush on shutdown.
-
-    Strategy: poll ``asyncio.all_tasks()`` for any task that isn't us or the
-    OTEL background workers, and wait until the task set (including the
-    LiteLLM worker queue, if it exists) is idle for a short quiet period.
-    Bounded by a total timeout so we never hang.
-    """
-    import asyncio
-    import sys
-
-    current_task = asyncio.current_task()
-
-    def _worker_state() -> tuple[object, object]:
-        """Return (queue, worker_loop_task) if LiteLLM's worker is active."""
-        mod = sys.modules.get("litellm.litellm_core_utils.logging_worker")
-        if mod is None:
-            return (None, None)
-        worker = getattr(mod, "GLOBAL_LOGGING_WORKER", None)
-        if worker is None:
-            return (None, None)
-        return (
-            getattr(worker, "_queue", None),
-            getattr(worker, "_worker_task", None),
-        )
-
-    loop = asyncio.get_event_loop()
-    deadline = loop.time() + 5.0
-    quiet_iterations = 0
-
-    while loop.time() < deadline:
-        await asyncio.sleep(0.01)
-
-        queue, worker_loop_task = _worker_state()
-
-        # LiteLLM's worker loop is long-lived (awaits queue.get() forever),
-        # so don't count it as "pending work" — it'll be cleaned up by
-        # loop teardown. Same for our own task.
-        exempt_tasks = {current_task, worker_loop_task}
-        other_pending = any(
-            t not in exempt_tasks and not t.done()
-            for t in asyncio.all_tasks(loop=loop)
-        )
-
-        # Running callback tasks tracked by the LiteLLM worker itself.
-        running_tasks: set = set()
-        if queue is not None:
-            mod = sys.modules["litellm.litellm_core_utils.logging_worker"]
-            worker = getattr(mod, "GLOBAL_LOGGING_WORKER", None)
-            if worker is not None:
-                running_tasks = getattr(worker, "_running_tasks", None) or set()
-        worker_running = any(not t.done() for t in running_tasks)
-
-        queue_has_work = queue is not None and (
-            queue.qsize() > 0 or getattr(queue, "_unfinished_tasks", 0) > 0
-        )
-
-        if other_pending or worker_running or queue_has_work:
-            quiet_iterations = 0
-            continue
-
-        # Nothing running anywhere. Give a brief grace period for
-        # late-arriving tasks before declaring the pipeline idle.
-        quiet_iterations += 1
-        if quiet_iterations >= 5:  # ~50ms idle → done
-            break
-
-    # Final settle so spans created inside worker-driven callbacks reach the
-    # BatchSpanProcessor before shutdown.
-    await asyncio.sleep(0)
-
-
 def _shutdown_processors() -> None:
     """Shutdown all active processors. Called via atexit."""
     for processor in _active_processors:
@@ -531,9 +443,7 @@ def _auto_instrument_frameworks() -> None:
             GoogleADKInstrumentor,
         )
 
-        GoogleADKInstrumentor().instrument(
-            tracer_provider=trace.get_tracer_provider()
-        )
+        GoogleADKInstrumentor().instrument(tracer_provider=trace.get_tracer_provider())
     except ImportError:
         try:
             import google.adk.telemetry  # pyright: ignore[reportMissingImports]  # noqa: F401
