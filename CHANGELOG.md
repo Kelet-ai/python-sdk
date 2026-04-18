@@ -2,6 +2,32 @@
 
 <!-- version list -->
 
+## v1.4.1 (2026-04-17)
+
+### Bug Fixes
+
+- Drain LiteLLM callback tasks before agentic_session exit
+  ([#7](https://github.com/Kelet-ai/python-sdk/pull/7),
+  [`dcd672e`](https://github.com/Kelet-ai/python-sdk/commit/dcd672ef124070a08a3a9ab696dcbaba4ca87488))
+
+- **context**: Wrap drain in try/finally so _exit always runs
+  ([#7](https://github.com/Kelet-ai/python-sdk/pull/7),
+  [`dcd672e`](https://github.com/Kelet-ai/python-sdk/commit/dcd672ef124070a08a3a9ab696dcbaba4ca87488))
+
+- **drain**: Exempt pre-session tasks from aexit drain window
+  ([#7](https://github.com/Kelet-ai/python-sdk/pull/7),
+  [`dcd672e`](https://github.com/Kelet-ai/python-sdk/commit/dcd672ef124070a08a3a9ab696dcbaba4ca87488))
+
+### Refactoring
+
+- **drain**: Address code-review feedback ([#7](https://github.com/Kelet-ai/python-sdk/pull/7),
+  [`dcd672e`](https://github.com/Kelet-ai/python-sdk/commit/dcd672ef124070a08a3a9ab696dcbaba4ca87488))
+
+- **litellm**: Instrument via openinference wrapper, delete drain
+  ([#7](https://github.com/Kelet-ai/python-sdk/pull/7),
+  [`dcd672e`](https://github.com/Kelet-ai/python-sdk/commit/dcd672ef124070a08a3a9ab696dcbaba4ca87488))
+
+
 ## v1.4.0 (2026-04-16)
 
 ### Features
