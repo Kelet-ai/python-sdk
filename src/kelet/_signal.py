@@ -32,6 +32,12 @@ def _warn_unconfigured_once() -> None:
         )
 
 
+def _reset_warn_state() -> None:
+    """Reset the warn-once flag. For testing only."""
+    global _warned_unconfigured
+    _warned_unconfigured = False
+
+
 async def signal(
     kind: SignalKind,
     source: SignalSource,

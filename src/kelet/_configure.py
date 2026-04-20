@@ -266,10 +266,11 @@ def configure(
 
     Missing credentials are non-fatal by default: if KELET_API_KEY or
     KELET_PROJECT cannot be resolved from args or env vars, configure()
-    logs a single warning and returns without installing the SDK —
-    signal() becomes a silent no-op so the host app keeps running.
-    Pass strict=True to fail-fast instead (raises ValueError). Explicit
-    empty api_key="" / project="" still raises regardless of strict.
+    logs a single warning and returns without installing the SDK. signal()
+    becomes a silent no-op; agentic_session() still sets context vars but
+    no spans are exported. The host app keeps running. Pass strict=True
+    to fail-fast instead (raises ValueError). Explicit empty api_key="" /
+    project="" still raises regardless of strict.
 
     Args:
         api_key: API key (default: KELET_API_KEY env var)
@@ -308,8 +309,8 @@ def configure(
             raise
         logger.warning(
             "Kelet telemetry disabled: %s Host app will continue running; "
-            "signal() and agentic_session() become silent no-ops. "
-            "Pass strict=True to configure() to fail-fast instead.",
+            "signal() becomes a silent no-op. Pass strict=True to configure() "
+            "to fail-fast instead.",
             exc,
         )
         return

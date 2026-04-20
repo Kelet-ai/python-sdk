@@ -47,7 +47,7 @@ def test_configure_warns_and_noops_on_missing_api_key(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ):
-    """configure() with no args and no env must warn and install no-op."""
+    """configure() with no args and no env must warn exactly once and install no-op."""
     monkeypatch.delenv("KELET_API_KEY", raising=False)
     monkeypatch.delenv("KELET_PROJECT", raising=False)
 
@@ -55,8 +55,19 @@ def test_configure_warns_and_noops_on_missing_api_key(
         configure()
 
     assert not is_configured()
-    assert "Kelet telemetry disabled" in caplog.text
+    assert caplog.text.count("Kelet telemetry disabled") == 1
     assert "KELET_API_KEY required" in caplog.text
+
+
+def test_configure_still_raises_on_explicit_empty_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Explicit empty api_key='' is treated as missing via the falsy-env fallback."""
+    monkeypatch.delenv("KELET_API_KEY", raising=False)
+    monkeypatch.delenv("KELET_PROJECT", raising=False)
+
+    with pytest.raises(ValueError, match="KELET_API_KEY required"):
+        configure(api_key="", strict=True)
 
 
 def test_configure_warns_and_noops_on_missing_project(
