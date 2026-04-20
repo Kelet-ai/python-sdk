@@ -59,10 +59,10 @@ def test_configure_warns_and_noops_on_missing_api_key(
     assert "KELET_API_KEY required" in caplog.text
 
 
-def test_configure_still_raises_on_explicit_empty_api_key(
+def test_configure_raises_on_empty_api_key_when_env_unset(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Explicit empty api_key='' is treated as missing via the falsy-env fallback."""
+    """api_key='' with env unset hits the falsy-env fallback and is treated as missing."""
     monkeypatch.delenv("KELET_API_KEY", raising=False)
     monkeypatch.delenv("KELET_PROJECT", raising=False)
 
