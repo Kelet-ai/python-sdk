@@ -269,8 +269,11 @@ def configure(
     logs a single warning and returns without installing the SDK. signal()
     becomes a silent no-op; agentic_session() still sets context vars but
     no spans are exported. The host app keeps running. Pass strict=True
-    to fail-fast instead (raises ValueError). Explicit empty api_key="" /
-    project="" still raises regardless of strict.
+    to fail-fast instead (raises ValueError). Empty strings fall through
+    to the env-var fallback (``api_key or os.environ.get(...)``), so
+    ``api_key=""`` with the env var also unset is treated the same as
+    omitting it — warn-and-no-op under strict=False, ValueError under
+    strict=True.
 
     Args:
         api_key: API key (default: KELET_API_KEY env var)
