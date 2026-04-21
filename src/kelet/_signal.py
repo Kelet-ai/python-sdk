@@ -18,6 +18,25 @@ _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 0.5  # seconds
 _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
+# Warn at most once per process when signal() is called without configuration.
+_warned_unconfigured = False
+
+
+def _warn_unconfigured_once() -> None:
+    global _warned_unconfigured
+    if not _warned_unconfigured:
+        _warned_unconfigured = True
+        logger.warning(
+            "kelet.signal() called before configure() and KELET_API_KEY/KELET_PROJECT "
+            "not set — dropping signal. Call kelet.configure() to enable."
+        )
+
+
+def _reset_warn_state() -> None:
+    """Reset the warn-once flag. For testing only."""
+    global _warned_unconfigured
+    _warned_unconfigured = False
+
 
 async def signal(
     kind: SignalKind,
@@ -92,7 +111,14 @@ async def signal(
             "Use agentic_session() context, or pass explicitly."
         )
 
-    config = get_config()
+    try:
+        config = get_config()
+    except ValueError:
+        # Missing KELET_API_KEY / KELET_PROJECT at the process level.
+        # configure() would have already warned if it was called;
+        # if not, warn once here so the silent drop is traceable.
+        _warn_unconfigured_once()
+        return
     client = await config.get_client()
 
     url = f"{config.base_url}/api/projects/{config.project}/signal"

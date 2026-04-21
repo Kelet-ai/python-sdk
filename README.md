@@ -272,6 +272,7 @@ The SDK never disrupts your application:
 - **Async**: Telemetry exports in background, zero blocking
 - **Fail-safe**: Telemetry export and `signal()` delivery are best-effort by default
 - **Visible**: Delivery failures warn in logs; pass `raise_on_failure=True` to `signal()` to surface them
+- **Safe on missing credentials**: If `KELET_API_KEY` or `KELET_PROJECT` can't be resolved, `configure()` logs a single warning and installs a no-op — `signal()` and `agentic_session()` become silent passthroughs. Pass `strict=True` to `configure()` to fail-fast on CI / staging.
 - **Graceful**: If Kelet is down, your agent keeps running
 - **Auto-flush**: Spans exported automatically on process exit
 

@@ -1,6 +1,7 @@
 """Configuration function for Kelet SDK."""
 
 import atexit
+import logging
 import os
 from typing import NamedTuple, Optional, Sequence
 
@@ -26,6 +27,8 @@ from ._context import (
     USER_ID_ATTR,
     AGENT_NAME_ATTR,
 )
+
+logger = logging.getLogger(__name__)
 
 # Track processors for shutdown
 _active_processors: list[SpanProcessor] = []
@@ -254,11 +257,23 @@ def configure(
     auto_instrument: bool = True,
     additional_span_processors: Optional[Sequence[SpanProcessor]] = None,
     span_processor: Optional[SpanProcessor] = None,
+    strict: bool = False,
 ) -> None:
     """Configure Kelet SDK.
 
     If a TracerProvider already exists (e.g., from logfire), adds Kelet's
     processor to it. Otherwise, creates a new TracerProvider.
+
+    Missing credentials are non-fatal by default: if KELET_API_KEY or
+    KELET_PROJECT cannot be resolved from args or env vars, configure()
+    logs a single warning and returns without installing the SDK. signal()
+    becomes a silent no-op; agentic_session() still sets context vars but
+    no spans are exported. The host app keeps running. Pass strict=True
+    to fail-fast instead (raises ValueError). Empty strings fall through
+    to the env-var fallback (``api_key or os.environ.get(...)``), so
+    ``api_key=""`` with the env var also unset is treated the same as
+    omitting it — warn-and-no-op under strict=False, ValueError under
+    strict=True.
 
     Args:
         api_key: API key (default: KELET_API_KEY env var)
@@ -274,9 +289,11 @@ def configure(
                        self-referential monitoring scenarios). When provided, api_key/
                        base_url are still used for signal() API calls but not for the
                        span export pipeline.
+        strict: If True, re-raise ValueError on missing credentials instead of
+                warning and disabling telemetry. Default False.
 
     Raises:
-        ValueError: If KELET_API_KEY is not provided.
+        ValueError: If credentials are missing and strict=True.
         RuntimeError: If existing TracerProvider doesn't support add_span_processor.
 
     Environment variables:
@@ -288,7 +305,18 @@ def configure(
         import kelet
         kelet.configure()
     """
-    cfg = _resolve_config(api_key, project, base_url)
+    try:
+        cfg = _resolve_config(api_key, project, base_url)
+    except ValueError as exc:
+        if strict:
+            raise
+        logger.warning(
+            "Kelet telemetry disabled: %s Host app will continue running; "
+            "signal() becomes a silent no-op. Pass strict=True to configure() "
+            "to fail-fast instead.",
+            exc,
+        )
+        return
 
     # Store config for signal() and other API calls
     config = KeletConfig(

@@ -1,5 +1,6 @@
 """Unit tests for signal submission behavior."""
 
+import logging
 from unittest.mock import AsyncMock
 
 import httpx
@@ -136,3 +137,43 @@ async def test_signal_raises_immediately_on_non_retryable_failure_when_requested
 
     assert client.post.call_count == 1
     assert "retrying in" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_signal_noops_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    """signal() must drop silently (with a single warn) when config is unresolvable."""
+    monkeypatch.delenv("KELET_API_KEY", raising=False)
+    monkeypatch.delenv("KELET_PROJECT", raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="kelet._signal"):
+        result = await signal(
+            kind=SignalKind.FEEDBACK,
+            source=SignalSource.HUMAN,
+            session_id="session-123",
+        )
+
+    assert result is None
+    assert caplog.text.count("dropping signal") == 1
+
+
+@pytest.mark.asyncio
+async def test_signal_warn_only_fires_once_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    """The unconfigured warning should fire at most once per process."""
+    monkeypatch.delenv("KELET_API_KEY", raising=False)
+    monkeypatch.delenv("KELET_PROJECT", raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="kelet._signal"):
+        for _ in range(5):
+            await signal(
+                kind=SignalKind.FEEDBACK,
+                source=SignalSource.HUMAN,
+                session_id="session-123",
+            )
+
+    assert caplog.text.count("dropping signal") == 1
