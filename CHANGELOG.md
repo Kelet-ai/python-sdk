@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.4.2 (2026-04-21)
+
+### Bug Fixes
+
+- **configure**: Warn and no-op on missing credentials instead of crashing
+  ([#8](https://github.com/Kelet-ai/python-sdk/pull/8),
+  [`0358235`](https://github.com/Kelet-ai/python-sdk/commit/035823558e10b375ece50fad852f519a3bb7ab90))
+
+- **configure**: Warn-and-no-op on missing KELET_API_KEY instead of crashing
+  ([#8](https://github.com/Kelet-ai/python-sdk/pull/8),
+  [`0358235`](https://github.com/Kelet-ai/python-sdk/commit/035823558e10b375ece50fad852f519a3bb7ab90))
+
+
 ## v1.4.1 (2026-04-17)
 
 ### Bug Fixes
