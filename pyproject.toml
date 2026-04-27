@@ -10,6 +10,8 @@ dependencies = [
     "pydantic>=2.10.6",
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-exporter-otlp-proto-http>=1.20.0",
+    "opentelemetry-instrumentation>=0.41b0",
+    "wrapt>=1.14.0",
 ]
 
 [project.optional-dependencies]
@@ -17,16 +19,21 @@ anthropic = ["openinference-instrumentation-anthropic"]
 openai = ["openinference-instrumentation-openai"]
 langchain = ["openinference-instrumentation-langchain"]
 google-adk = ["openinference-instrumentation-google-adk"]
+claude-agent-sdk = ["claude-agent-sdk>=0.1.45"]
 all = [
     "openinference-instrumentation-anthropic",
     "openinference-instrumentation-openai",
     "openinference-instrumentation-langchain",
     "openinference-instrumentation-google-adk",
+    "claude-agent-sdk>=0.1.45",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kelet"]
 
 
 [tool.pyright]
