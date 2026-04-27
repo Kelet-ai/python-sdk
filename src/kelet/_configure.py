@@ -6,11 +6,15 @@ import os
 from typing import NamedTuple, Optional, Sequence
 
 from opentelemetry import baggage as otel_baggage, trace
+from opentelemetry._logs import get_logger_provider, set_logger_provider
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.sdk._logs import LoggerProvider, LogRecordProcessor
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.trace import TracerProvider, SpanProcessor, ReadableSpan, Span
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import ProxyTracerProvider
@@ -32,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Track processors for shutdown
 _active_processors: list[SpanProcessor] = []
+_active_log_processors: list[LogRecordProcessor] = []
 
 
 class _ResolvedConfig(NamedTuple):
@@ -165,10 +170,46 @@ def _shutdown_processors() -> None:
             processor.shutdown()
         except Exception:
             pass  # Best effort shutdown
+    for log_processor in _active_log_processors:
+        try:
+            log_processor.shutdown()
+        except Exception:
+            pass  # Best effort shutdown
 
 
 # Register shutdown hook
 atexit.register(_shutdown_processors)
+
+
+def _setup_logger_provider(cfg: _ResolvedConfig) -> None:
+    """Install a LoggerProvider that exports OTLP logs to Kelet.
+
+    Claude Code redacts reasoning text in its native OTLP payloads, so the
+    ``kelet.reasoning`` observer emits ``kelet.reasoning`` log records through
+    this provider instead of a span event. The endpoint mirrors the trace
+    exporter (``/api/logs``) so the same auth headers apply.
+
+    No-op when a real ``LoggerProvider`` is already installed globally, so
+    calling ``configure()`` after logfire / another SDK has set one up won't
+    clobber it. The default ``NoOpLoggerProvider`` IS replaced — it would
+    silently drop ``kelet.reasoning`` emissions otherwise.
+    """
+    existing_provider = get_logger_provider()
+    if isinstance(existing_provider, LoggerProvider):
+        return
+
+    log_exporter = OTLPLogExporter(
+        endpoint=f"{cfg.base_url}/api/logs",
+        headers={
+            "Authorization": cfg.api_key,
+            "X-Kelet-Project": cfg.project,
+        },
+    )
+    log_processor = BatchLogRecordProcessor(log_exporter)
+    logger_provider = LoggerProvider()
+    logger_provider.add_log_record_processor(log_processor)
+    set_logger_provider(logger_provider)
+    _active_log_processors.append(log_processor)
 
 
 def create_kelet_processor(
@@ -381,6 +422,13 @@ def configure(
 
         trace.set_tracer_provider(provider)
 
+    # Install a LoggerProvider so the Claude Agent SDK reasoning observer can
+    # emit ``kelet.reasoning`` OTLP log records to Kelet (Claude Code's own
+    # OTLP redacts reasoning text, so observer-emitted events are the only
+    # path to preserve them). Runs for both new-provider and existing-provider
+    # paths — the observer needs a logger regardless of who owns the tracer.
+    _setup_logger_provider(cfg)
+
     if auto_instrument:
         _auto_instrument_frameworks()
 
@@ -477,3 +525,14 @@ def _auto_instrument_frameworks() -> None:
             import google.adk.telemetry  # pyright: ignore[reportMissingImports]  # noqa: F401
         except ImportError:
             pass
+
+    # Claude Agent SDK — install the ``kelet.reasoning`` observer that emits
+    # OTLP log records whenever the streamed ``AssistantMessage`` contains a
+    # ``ThinkingBlock`` (Claude Code redacts thinking text in its own OTLP
+    # payloads, so the observer is the only path to preserve them).
+    try:
+        from kelet._integrations.claude_agent_sdk import ClaudeAgentSDKInstrumentor
+
+        ClaudeAgentSDKInstrumentor().instrument()
+    except ImportError:
+        pass  # claude-agent-sdk not installed
