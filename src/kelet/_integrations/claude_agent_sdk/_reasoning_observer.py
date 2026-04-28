@@ -20,12 +20,11 @@ Code LLM interaction by ``reasoning.message_id``
 Instrumentation scope
 ---------------------
 The OTel SDK stamps each log record's ``instrumentation_scope.name`` from
-the ``get_logger(name)`` argument. The Kelet server filters
-``/api/logs`` on scopes starting with ``com.anthropic.claude_code`` —
-anything else is warn-and-dropped. We therefore emit under
+the ``get_logger(name)`` argument. The Kelet ingestion endpoint accepts
+scopes prefixed with ``com.anthropic.claude_code`` — anything else is
+warn-and-dropped. We therefore emit under
 ``com.anthropic.claude_code.kelet_reasoning`` so the records reach the
-CC ingestion workflow. See ``server/src/otel/service.py::_is_cc_request``
-(monorepo) for the server-side predicate.
+CC ingestion workflow.
 
 Session id stickiness
 ---------------------

@@ -83,4 +83,4 @@ export KELET_PROJECT=production
 
 ## See also
 
-- Contract spec lives in the Kelet monorepo (`claudedocs/claude-agent-sdk-contract.md`) — exact attribute keys + invariants.
+- The Kelet Claude Agent SDK integration docs, above, describe everything public consumers need. Exact server-side attribute contracts are implementation details of the Kelet ingestion pipeline.
