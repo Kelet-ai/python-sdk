@@ -2,6 +2,34 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-04-28)
+
+### Bug Fixes
+
+- **kel-391**: Address PR #9 review blockers (scope name, provider, sticky session)
+  ([#9](https://github.com/Kelet-ai/python-sdk/pull/9),
+  [`6e5fcb3`](https://github.com/Kelet-ai/python-sdk/commit/6e5fcb3df92e0b813faae8093fd3dd85a02e0d0c))
+
+### Features
+
+- **claude_agent_sdk**: Slim reasoning observer + auto-instrumentor
+  ([#9](https://github.com/Kelet-ai/python-sdk/pull/9),
+  [`6e5fcb3`](https://github.com/Kelet-ai/python-sdk/commit/6e5fcb3df92e0b813faae8093fd3dd85a02e0d0c))
+
+- **configure**: Install LoggerProvider for OTLP log export
+  ([#9](https://github.com/Kelet-ai/python-sdk/pull/9),
+  [`6e5fcb3`](https://github.com/Kelet-ai/python-sdk/commit/6e5fcb3df92e0b813faae8093fd3dd85a02e0d0c))
+
+- **KEL-391**: Claude Agent SDK slim observer + LoggerProvider
+  ([#9](https://github.com/Kelet-ai/python-sdk/pull/9),
+  [`6e5fcb3`](https://github.com/Kelet-ai/python-sdk/commit/6e5fcb3df92e0b813faae8093fd3dd85a02e0d0c))
+
+### Refactoring
+
+- Dedup shutdown loops (baz PR#9 feedback) ([#9](https://github.com/Kelet-ai/python-sdk/pull/9),
+  [`6e5fcb3`](https://github.com/Kelet-ai/python-sdk/commit/6e5fcb3df92e0b813faae8093fd3dd85a02e0d0c))
+
+
 ## v1.4.2 (2026-04-21)
 
 ### Bug Fixes
