@@ -161,15 +161,14 @@ class _KeletSpanProcessor(SpanProcessor):
 
 
 def _shutdown_processors() -> None:
-    """Shutdown all active processors. Called via atexit."""
-    for processor in _active_processors:
+    """Shutdown all active span + log processors. Called via atexit.
+
+    Best-effort: exporter shutdown errors are swallowed because the
+    process is already exiting — nothing useful happens if we raise.
+    """
+    for proc in (*_active_processors, *_active_log_processors):
         try:
-            processor.shutdown()
-        except Exception:
-            pass  # Best effort shutdown
-    for log_processor in _active_log_processors:
-        try:
-            log_processor.shutdown()
+            proc.shutdown()
         except Exception:
             pass  # Best effort shutdown
 
