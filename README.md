@@ -155,6 +155,7 @@ async with kelet.agentic_session(session_id="sess-123"):
 | **LangChain / LangGraph** | `pip install kelet[langchain]` | OpenInference instrumentation |
 | **LiteLLM** | `pip install litellm` | Registers LiteLLM's native OTEL callback automatically and prefers per-request spans |
 | **Google ADK** | `pip install google-adk kelet[google-adk]` | Prefers OpenInference instrumentation; falls back to native ADK OTEL spans |
+| **Claude Agent SDK** | `pip install claude-agent-sdk` | Captures reasoning text Claude Code redacts from its native OTLP — see [docs/claude-agent-sdk.md](./docs/claude-agent-sdk.md) |
 
 Install all OpenInference extras at once: `pip install kelet[all]`
 

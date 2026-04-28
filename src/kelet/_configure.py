@@ -11,6 +11,7 @@ from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.sdk._logs import LogRecordProcessor
 from opentelemetry.sdk.trace import TracerProvider, SpanProcessor, ReadableSpan, Span
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import ProxyTracerProvider
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Track processors for shutdown
 _active_processors: list[SpanProcessor] = []
+_active_log_processors: list[LogRecordProcessor] = []
 
 
 class _ResolvedConfig(NamedTuple):
@@ -159,16 +161,35 @@ class _KeletSpanProcessor(SpanProcessor):
 
 
 def _shutdown_processors() -> None:
-    """Shutdown all active processors. Called via atexit."""
-    for processor in _active_processors:
+    """Shutdown all active span + log processors. Called via atexit.
+
+    Best-effort: exporter shutdown errors are swallowed because the
+    process is already exiting — nothing useful happens if we raise.
+    """
+    for proc in (*_active_processors, *_active_log_processors):
         try:
-            processor.shutdown()
+            proc.shutdown()
         except Exception:
             pass  # Best effort shutdown
 
 
 # Register shutdown hook
 atexit.register(_shutdown_processors)
+
+
+# NOTE: the global ``_setup_logger_provider`` helper was intentionally
+# removed. Installing a LoggerProvider on the OTel global clobbered host
+# applications that wired their own logging pipeline (Datadog, Grafana,
+# Sentry, etc.) — baz-reviewer flagged this on the rollup PR and the
+# Python SDK code review (Important #3).
+#
+# The LoggerProvider used by the Claude Agent SDK reasoning observer is
+# now owned by ``ClaudeAgentSDKInstrumentor`` itself (see
+# ``src/kelet/_integrations/claude_agent_sdk/_instrumentor.py``), which
+# provisions a dedicated provider on ``instrument()`` and routes the
+# observer through it via ``_reasoning_observer.set_logger``. Callers
+# who want to inject their own provider can pass it as
+# ``ClaudeAgentSDKInstrumentor().instrument(logger_provider=...)``.
 
 
 def create_kelet_processor(
@@ -381,6 +402,15 @@ def configure(
 
         trace.set_tracer_provider(provider)
 
+    # NOTE: the LoggerProvider used to be installed globally here. That
+    # clobbered host-app logging pipelines and was fixed by moving the
+    # LoggerProvider install into ``ClaudeAgentSDKInstrumentor._instrument``,
+    # which owns a dedicated, integration-scoped provider and routes the
+    # reasoning observer through it via ``set_logger(...)``. The global
+    # ``_setup_logger_provider`` helper is preserved below for manual
+    # opt-in callers who need ``kelet.reasoning`` emissions without
+    # installing the CC integration.
+
     if auto_instrument:
         _auto_instrument_frameworks()
 
@@ -477,3 +507,14 @@ def _auto_instrument_frameworks() -> None:
             import google.adk.telemetry  # pyright: ignore[reportMissingImports]  # noqa: F401
         except ImportError:
             pass
+
+    # Claude Agent SDK — install the ``kelet.reasoning`` observer that emits
+    # OTLP log records whenever the streamed ``AssistantMessage`` contains a
+    # ``ThinkingBlock`` (Claude Code redacts thinking text in its own OTLP
+    # payloads, so the observer is the only path to preserve them).
+    try:
+        from kelet._integrations.claude_agent_sdk import ClaudeAgentSDKInstrumentor
+
+        ClaudeAgentSDKInstrumentor().instrument()
+    except ImportError:
+        pass  # claude-agent-sdk not installed
