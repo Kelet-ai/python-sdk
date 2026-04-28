@@ -83,4 +83,4 @@ export KELET_PROJECT=production
 
 ## See also
 
-- [Contract spec](./claude-agent-sdk-contract.md) — exact attribute keys + invariants.
+- Contract spec lives in the Kelet monorepo (`claudedocs/claude-agent-sdk-contract.md`) — exact attribute keys + invariants.
