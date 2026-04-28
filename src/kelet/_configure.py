@@ -6,15 +6,12 @@ import os
 from typing import NamedTuple, Optional, Sequence
 
 from opentelemetry import baggage as otel_baggage, trace
-from opentelemetry._logs import get_logger_provider, set_logger_provider
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.propagate import get_global_textmap, set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
-from opentelemetry.sdk._logs import LoggerProvider, LogRecordProcessor
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk._logs import LogRecordProcessor
 from opentelemetry.sdk.trace import TracerProvider, SpanProcessor, ReadableSpan, Span
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import ProxyTracerProvider
@@ -181,35 +178,19 @@ def _shutdown_processors() -> None:
 atexit.register(_shutdown_processors)
 
 
-def _setup_logger_provider(cfg: _ResolvedConfig) -> None:
-    """Install a LoggerProvider that exports OTLP logs to Kelet.
-
-    Claude Code redacts reasoning text in its native OTLP payloads, so the
-    ``kelet.reasoning`` observer emits ``kelet.reasoning`` log records through
-    this provider instead of a span event. The endpoint mirrors the trace
-    exporter (``/api/logs``) so the same auth headers apply.
-
-    No-op when a real ``LoggerProvider`` is already installed globally, so
-    calling ``configure()`` after logfire / another SDK has set one up won't
-    clobber it. The default ``NoOpLoggerProvider`` IS replaced — it would
-    silently drop ``kelet.reasoning`` emissions otherwise.
-    """
-    existing_provider = get_logger_provider()
-    if isinstance(existing_provider, LoggerProvider):
-        return
-
-    log_exporter = OTLPLogExporter(
-        endpoint=f"{cfg.base_url}/api/logs",
-        headers={
-            "Authorization": cfg.api_key,
-            "X-Kelet-Project": cfg.project,
-        },
-    )
-    log_processor = BatchLogRecordProcessor(log_exporter)
-    logger_provider = LoggerProvider()
-    logger_provider.add_log_record_processor(log_processor)
-    set_logger_provider(logger_provider)
-    _active_log_processors.append(log_processor)
+# NOTE: the global ``_setup_logger_provider`` helper was intentionally
+# removed. Installing a LoggerProvider on the OTel global clobbered host
+# applications that wired their own logging pipeline (Datadog, Grafana,
+# Sentry, etc.) — baz-reviewer flagged this on the rollup PR and the
+# Python SDK code review (Important #3).
+#
+# The LoggerProvider used by the Claude Agent SDK reasoning observer is
+# now owned by ``ClaudeAgentSDKInstrumentor`` itself (see
+# ``src/kelet/_integrations/claude_agent_sdk/_instrumentor.py``), which
+# provisions a dedicated provider on ``instrument()`` and routes the
+# observer through it via ``_reasoning_observer.set_logger``. Callers
+# who want to inject their own provider can pass it as
+# ``ClaudeAgentSDKInstrumentor().instrument(logger_provider=...)``.
 
 
 def create_kelet_processor(
@@ -422,12 +403,14 @@ def configure(
 
         trace.set_tracer_provider(provider)
 
-    # Install a LoggerProvider so the Claude Agent SDK reasoning observer can
-    # emit ``kelet.reasoning`` OTLP log records to Kelet (Claude Code's own
-    # OTLP redacts reasoning text, so observer-emitted events are the only
-    # path to preserve them). Runs for both new-provider and existing-provider
-    # paths — the observer needs a logger regardless of who owns the tracer.
-    _setup_logger_provider(cfg)
+    # NOTE: the LoggerProvider used to be installed globally here. That
+    # clobbered host-app logging pipelines and was fixed by moving the
+    # LoggerProvider install into ``ClaudeAgentSDKInstrumentor._instrument``,
+    # which owns a dedicated, integration-scoped provider and routes the
+    # reasoning observer through it via ``set_logger(...)``. The global
+    # ``_setup_logger_provider`` helper is preserved below for manual
+    # opt-in callers who need ``kelet.reasoning`` emissions without
+    # installing the CC integration.
 
     if auto_instrument:
         _auto_instrument_frameworks()
