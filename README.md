@@ -94,6 +94,21 @@ async def handle_request():
 
 But most users don't need this—instrumentation captures sessions automatically from pydantic-ai and other supported frameworks.
 
+### Using with Temporal
+
+If your agents run on [Temporal](https://temporal.io), register `KeletPlugin` once on the client — workers inherit automatically:
+
+```python
+from kelet.temporal import KeletPlugin
+from temporalio.client import Client
+
+client = await Client.connect("localhost:7233", plugins=[KeletPlugin()])
+```
+
+Session context flows through Temporal headers across `start_workflow → workflow → activity`, so `kelet.signal()` from anywhere auto-resolves. Install: `pip install "kelet[temporal]"`.
+
+📖 Full setup, options, plugin ordering: **[docs.kelet.ai/integrations/temporal](https://docs.kelet.ai/docs/integrations/temporal/)**
+
 ### Using Different Projects Under the Same Application
 
 If your application hosts multiple independent root agent systems that belong to different Kelet projects (for example `customer_support_prod` and `billing_prod`), you can override the global project on a per-session basis using the `project` parameter on `agentic_session`:

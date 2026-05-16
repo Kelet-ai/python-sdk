@@ -27,6 +27,9 @@ all = [
     "openinference-instrumentation-google-adk",
     "claude-agent-sdk>=0.1.45",
 ]
+temporal = [
+    "temporalio>=1.7.0",
+]
 
 [build-system]
 requires = ["hatchling"]

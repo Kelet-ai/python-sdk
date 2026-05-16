@@ -2,7 +2,7 @@
 
 import os
 import threading
-from typing import Optional
+from typing import Literal, Optional
 
 import httpx
 from pydantic import BaseModel, PrivateAttr
@@ -12,6 +12,8 @@ _PROJECT_REQUIRED_ERROR = (
     "Create a project at https://console.kelet.ai"
 )
 
+SignalFailureMode = Literal["swallow", "raise"]
+
 
 class KeletConfig(BaseModel):
     """Internal configuration for Kelet SDK."""
@@ -19,6 +21,13 @@ class KeletConfig(BaseModel):
     api_key: str
     base_url: str
     project: str
+    # When kelet.signal() is called from inside a Temporal workflow, the SDK
+    # dispatches via a Temporal activity (so the HTTP call is durable and
+    # retried). On final failure (after retries) we either swallow + log or
+    # raise an ApplicationError. Default 'swallow' matches "telemetry should
+    # never fail user code" — flip to 'raise' if you want signal failures to
+    # surface to the workflow.
+    signal_failure_mode: SignalFailureMode = "swallow"
 
     _http_client: Optional[httpx.AsyncClient] = PrivateAttr(default=None)
 
