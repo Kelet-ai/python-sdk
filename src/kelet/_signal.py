@@ -182,22 +182,45 @@ async def signal(
     )
 
 
+_KELET_PLUGIN_INSTALLED_MSG = (
+    "kelet.signal() called from workflow code, but the _kelet_signal activity "
+    "is not registered on this worker. Use `KeletPlugin` (not the standalone "
+    "`KeletInterceptor`) so the activity is auto-registered, or call "
+    "`kelet.signal()` only from activity / orchestrator code where direct "
+    "HTTP is safe."
+)
+
+
 async def _dispatch_via_activity(args: _SignalArgs) -> None:
     """Dispatch signal through ``_kelet_signal_activity`` from inside a workflow.
 
     Imported lazily so that ``signal()`` callers outside Temporal don't pay
     the import cost (and so this module stays importable when ``temporalio``
     is not installed).
+
+    If ``_kelet_signal_activity`` is not registered on the worker (the user
+    wired ``KeletInterceptor`` standalone instead of ``KeletPlugin``), Temporal
+    raises ``ActivityError`` wrapping an ``ApplicationError`` with a
+    NotFoundError type. We surface that as a clear Kelet-side ``RuntimeError``
+    pointing users at the fix — silently falling back to direct httpx would
+    corrupt workflow replay determinism, so fail loudly instead.
     """
     from temporalio import workflow  # type: ignore[reportMissingImports]
     from temporalio.common import RetryPolicy  # type: ignore[reportMissingImports]
+    from temporalio.exceptions import ActivityError, ApplicationError  # type: ignore[reportMissingImports]
 
-    await workflow.execute_activity(
-        _kelet_signal_activity,
-        args,
-        start_to_close_timeout=timedelta(seconds=30),
-        retry_policy=RetryPolicy(maximum_attempts=3),
-    )
+    try:
+        await workflow.execute_activity(
+            _kelet_signal_activity,
+            args,
+            start_to_close_timeout=timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+    except ActivityError as e:
+        cause = e.__cause__
+        if isinstance(cause, ApplicationError) and cause.type == "NotFoundError":
+            raise RuntimeError(_KELET_PLUGIN_INSTALLED_MSG) from e
+        raise
 
 
 async def _kelet_signal_activity(args: _SignalArgs) -> None:

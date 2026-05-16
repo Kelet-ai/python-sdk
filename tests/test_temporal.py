@@ -973,6 +973,42 @@ class TestSignalDispatch:
         if isinstance(registered, (list, tuple)):
             assert _kelet_signal_activity in registered
 
+    @pytest.mark.asyncio
+    async def test_i6_signal_in_workflow_without_plugin_raises_clear_error(self):
+        """If the user wires KeletInterceptor standalone (no KeletPlugin),
+        _kelet_signal_activity isn't registered. Calling kelet.signal() from
+        workflow code should raise a clear RuntimeError pointing at the fix —
+        NOT silently fall back to direct httpx (which would be non-deterministic)."""
+        from temporalio.exceptions import ActivityError, ApplicationError
+
+        # Simulate Temporal's NotFoundError ApplicationError that bubbles up
+        # when the activity isn't registered on the worker.
+        not_found = ApplicationError("activity not found", type="NotFoundError")
+        wrapped = ActivityError(
+            "activity error",
+            scheduled_event_id=1,
+            started_event_id=2,
+            identity="x",
+            activity_type="_kelet_signal",
+            activity_id="1",
+            retry_state=None,
+        )
+        wrapped.__cause__ = not_found
+
+        with (
+            patch("kelet._signal.in_temporal_workflow", return_value=True),
+            patch(
+                "temporalio.workflow.execute_activity",
+                new=AsyncMock(side_effect=wrapped),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="KeletPlugin"):
+                await kelet.signal(
+                    kind=kelet.SignalKind.FEEDBACK,
+                    source=kelet.SignalSource.HUMAN,
+                    session_id="sess-I6",
+                )
+
 
 # ───────────────── extra: tiny helper coverage ─────────────────
 

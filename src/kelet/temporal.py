@@ -31,7 +31,7 @@ import asyncio
 import dataclasses
 import logging
 from collections.abc import Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
 from typing import Any, AsyncIterator, Mapping, Optional, Type, Union
 
@@ -224,6 +224,27 @@ class _WorkflowOutbound(temporalio.worker.WorkflowOutboundInterceptor):
 # Only sets contextvars — sandbox-safe. No OTEL attach, no drain.
 
 
+@contextmanager
+def _scoped_session_from_headers(headers: Mapping[str, Any]):
+    """Set the session contextvar for the duration of the block iff the inbound
+    headers carry one. Yields ``True`` when context was applied, ``False`` when
+    headers had no Kelet session (caller can use the flag to short-circuit).
+
+    Used by signal/query/update handlers — they only need the session id, not
+    user_id or metadata, since handler bodies don't open ``agentic_session``.
+    ``execute_workflow`` does its own multi-var dance for the full payload.
+    """
+    sess, *_ = _extract(headers)
+    if sess is None:
+        yield False
+        return
+    tok = _session_id_var.set(sess)
+    try:
+        yield True
+    finally:
+        _session_id_var.reset(tok)
+
+
 class _WorkflowInbound(temporalio.worker.WorkflowInboundInterceptor):
     def init(self, outbound: temporalio.worker.WorkflowOutboundInterceptor) -> None:
         super().init(_WorkflowOutbound(outbound))
@@ -244,46 +265,20 @@ class _WorkflowInbound(temporalio.worker.WorkflowInboundInterceptor):
                 t.var.reset(t)
 
     async def handle_signal(self, input: HandleSignalInput) -> None:
-        sess, *_ = _extract(input.headers)
-        if sess is None:
+        with _scoped_session_from_headers(input.headers):
             await super().handle_signal(input)
-            return
-        tok = _session_id_var.set(sess)
-        try:
-            await super().handle_signal(input)
-        finally:
-            _session_id_var.reset(tok)
 
     async def handle_query(self, input: HandleQueryInput):
-        sess, *_ = _extract(input.headers)
-        if sess is None:
+        with _scoped_session_from_headers(input.headers):
             return await super().handle_query(input)
-        tok = _session_id_var.set(sess)
-        try:
-            return await super().handle_query(input)
-        finally:
-            _session_id_var.reset(tok)
 
     def handle_update_validator(self, input: HandleUpdateInput) -> None:
-        sess, *_ = _extract(input.headers)
-        if sess is None:
+        with _scoped_session_from_headers(input.headers):
             super().handle_update_validator(input)
-            return
-        tok = _session_id_var.set(sess)
-        try:
-            super().handle_update_validator(input)
-        finally:
-            _session_id_var.reset(tok)
 
     async def handle_update_handler(self, input: HandleUpdateInput):
-        sess, *_ = _extract(input.headers)
-        if sess is None:
+        with _scoped_session_from_headers(input.headers):
             return await super().handle_update_handler(input)
-        tok = _session_id_var.set(sess)
-        try:
-            return await super().handle_update_handler(input)
-        finally:
-            _session_id_var.reset(tok)
 
 
 # ── activity inbound (full mode) ─────────────────────────────────────────────
