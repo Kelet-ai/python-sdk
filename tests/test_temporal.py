@@ -29,7 +29,13 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from temporalio import client, common, workflow, worker
+
+# ``temporalio`` is an optional extra (``kelet[temporal]``). Skip this entire
+# module when it isn't installed so CI matrices that don't install the extra
+# (e.g. the default ``uv run pytest`` invocation in release.yml) still pass.
+pytest.importorskip("temporalio")
+
+from temporalio import client, common, workflow, worker  # noqa: E402
 from temporalio.api.common.v1.message_pb2 import Payload
 from temporalio.contrib.opentelemetry import (
     OpenTelemetryInterceptor,
