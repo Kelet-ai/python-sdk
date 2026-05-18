@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.6.0 (2026-05-18)
+
+### Features
+
+- **temporal**: KeletPlugin for one-line Temporal integration
+  ([#10](https://github.com/Kelet-ai/python-sdk/pull/10),
+  [`7c8c8a6`](https://github.com/Kelet-ai/python-sdk/commit/7c8c8a675ad624e87f68dbe11530c2d1cdbe69e9))
+
+
 ## v1.5.0 (2026-04-28)
 
 ### Bug Fixes
