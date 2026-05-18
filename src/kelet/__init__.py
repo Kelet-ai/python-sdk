@@ -58,3 +58,14 @@ __all__ = [
     "SignalKind",
     "SignalSource",
 ]
+
+# Optional: ``KeletPlugin`` / ``KeletInterceptor`` for Temporal integration.
+# Available when the user installs ``kelet[temporal]`` (or has ``temporalio``
+# installed for any other reason). Imported lazily so the rest of the SDK
+# stays usable without temporalio.
+try:
+    from .temporal import KeletInterceptor, KeletPlugin  # noqa: F401
+
+    __all__.extend(["KeletInterceptor", "KeletPlugin"])
+except ImportError:
+    pass

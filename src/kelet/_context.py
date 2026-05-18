@@ -9,6 +9,8 @@ from typing import Optional
 
 from opentelemetry import baggage, context as otel_context, trace
 
+from ._temporal_detect import in_temporal_workflow
+
 _logger = logging.getLogger(__name__)
 
 # Hard timeout for _drain_background_logging_tasks. Bounded so a misbehaving
@@ -226,6 +228,14 @@ class _AgenticSessionContext:
             _project_override_var.set(effective_project),
             _metadata_kwargs_var.set(merged_kwargs),
         ]
+
+        # Inside a Temporal workflow we run in lite mode: contextvars are set
+        # (deterministic, sandbox-safe) but OTEL baggage attach + span attribute
+        # mutation is skipped. Workflow code emits no live spans by design;
+        # activities (where _enter runs in full mode) are where attributes go.
+        if in_temporal_workflow():
+            return
+
         ctx = otel_context.get_current()
         ctx = baggage.set_baggage("kelet.session_id", self._session_id, context=ctx)
         if effective_user_id is not None:
@@ -276,6 +286,11 @@ class _AgenticSessionContext:
         # that appeared DURING the session body. Pre-existing user tasks
         # (websockets, schedulers, long-lived workers) are exempt from
         # the drain window — they should not extend session exit.
+        # Skipped inside a Temporal workflow: asyncio.all_tasks() is
+        # non-deterministic and the drain itself is a no-op there.
+        if in_temporal_workflow():
+            self._aenter_tasks = None
+            return self
         try:
             self._aenter_tasks = set(asyncio.all_tasks())
         except RuntimeError:
@@ -288,6 +303,11 @@ class _AgenticSessionContext:
         # Doing this in aexit — rather than atexit — is what keeps
         # single-completion scenarios from losing their request spans when
         # asyncio.run() tears down the loop.
+        # Skipped inside a Temporal workflow: asyncio.all_tasks() and
+        # wall-clock sleeps are non-deterministic in the sandbox.
+        if in_temporal_workflow():
+            self._exit()
+            return
         try:
             try:
                 await _drain_background_logging_tasks(baseline=self._aenter_tasks)
@@ -340,6 +360,12 @@ def agentic_session(
     - ``async with agentic_session(...)``
     - ``@agentic_session(...)`` on sync functions
     - ``@agentic_session(...)`` on async functions
+
+    When called inside a Temporal workflow, this enters lite mode: contextvars
+    are set but OpenTelemetry baggage attach and the background-task drain are
+    skipped (workflow sandboxes forbid non-deterministic work). Both ``with``
+    and ``async with`` forms work in workflow context; ``async with`` is
+    preferred in async workflows for consistency with activity code.
 
     Args:
         session_id: Conversation/session identifier (gen_ai.conversation.id)

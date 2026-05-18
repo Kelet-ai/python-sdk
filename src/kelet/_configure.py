@@ -17,7 +17,12 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import ProxyTracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from ._config import KeletConfig, set_config, _PROJECT_REQUIRED_ERROR
+from ._config import (
+    KeletConfig,
+    SignalFailureMode,
+    set_config,
+    _PROJECT_REQUIRED_ERROR,
+)
 from ._context import (
     _session_id_var,
     _user_id_var,
@@ -279,6 +284,7 @@ def configure(
     additional_span_processors: Optional[Sequence[SpanProcessor]] = None,
     span_processor: Optional[SpanProcessor] = None,
     strict: bool = False,
+    signal_failure_mode: SignalFailureMode = "swallow",
 ) -> None:
     """Configure Kelet SDK.
 
@@ -312,6 +318,11 @@ def configure(
                        span export pipeline.
         strict: If True, re-raise ValueError on missing credentials instead of
                 warning and disabling telemetry. Default False.
+        signal_failure_mode: Behavior when ``kelet.signal()`` is dispatched via a
+                Temporal activity (workflow context) and fails after retries.
+                ``"swallow"`` (default) logs and drops the signal so user workflows
+                are never failed by telemetry; ``"raise"`` surfaces an
+                ApplicationError so the calling workflow can react.
 
     Raises:
         ValueError: If credentials are missing and strict=True.
@@ -344,6 +355,7 @@ def configure(
         api_key=cfg.api_key,
         base_url=cfg.base_url,
         project=cfg.project,
+        signal_failure_mode=signal_failure_mode,
     )
     set_config(config)
 
